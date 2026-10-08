@@ -6,10 +6,10 @@ var TIG = {
     title: 'Marketing Manager',
     tagline: 'Product Marketing, GTM & Growth',
     company: 'Amazon',
-    org: 'Worldwide Grocery · New & Emerging Brands',
+    org: 'Amazon Grocery & Whole Foods Market',
     location: 'New York, NY',
-    summary: 'Marketing manager with 5+ years of experience across small-business, product, and customer marketing. Built marketing programs for local businesses, supported the launch of Apple Business Essentials, and now own customer-facing marketing for Amazon\u2019s Emerging Brands initiative.',
-    bio: 'Chase Johnston is a Marketing Manager at Amazon focused on customer-facing marketing strategy across Amazon.com and Worldwide Grocery. He leads vendor marketing initiatives, digital merchandising, and campaign strategy for New and Emerging Brands, helping drive engagement and brand visibility across Amazon-owned channels. Prior to Amazon Marketing, Chase supported partner growth and go-to-market initiatives within Amazon Hub Delivery across major U.S. markets. With previous experience at Apple and running his own marketing agency in college, he brings a mix of creative storytelling, brand strategy, and data-driven execution to every project.'
+    summary: 'Marketing manager with 5+ years of experience across small-business, product, and customer marketing. Built marketing programs for local businesses, supported the launch of Apple Business Essentials, and created the marketing for Amazon\u2019s Emerging Brands initiative. Now own tech and AI marketing for Amazon Grocery and Whole Foods Market.',
+    bio: 'Chase Johnston is a Marketing Manager at Amazon on the Product Marketing team for Amazon Grocery and Whole Foods Market, where he owns tech and AI marketing and co-leads Grocery\u2019s pilot of Amazon\u2019s new AI tools for campaign planning and content creation. Before that he built the marketing for New and Emerging Brands across Amazon Fresh and Amazon Grocery, from vendor marketing and digital merchandising to campaign strategy and the performance dashboard the team and its agencies ran on. Prior to Amazon Marketing, Chase supported partner growth and go-to-market initiatives within Amazon Hub Delivery across major U.S. markets. With previous experience at Apple and running his own marketing agency in college, he brings a mix of creative storytelling, brand strategy, and data-driven execution to every project.'
   },
   contact: {
     email: 'chasetigerjohnston@gmail.com',
@@ -28,12 +28,13 @@ var TIG = {
   ],
   experience: [
     {
-      id: 'amz-mkt', company: 'Amazon', role: 'Marketing Manager, Worldwide Grocery', dates: '2025 \u2013 Present', where: 'New York, NY', accent: 'orange', current: true,
+      id: 'amz-mkt', company: 'Amazon', role: 'Marketing Manager, Amazon Grocery & Whole Foods Market', dates: '2025 \u2013 Present', where: 'New York, NY', accent: 'orange', current: true,
       bullets: [
+        'Own tech and AI marketing for the Amazon Grocery and Whole Foods Market product marketing team, co-leading Grocery\u2019s pilot of Amazon\u2019s new AI tools for campaign planning and content creation.',
         'Established the marketing strategy and rebuilt the customer-facing experience for Amazon\u2019s New & Emerging Brands initiative across Amazon Fresh and Amazon Grocery, including a new rotating homepage placement that drives discovery and lifecycle engagement for eligible brands.',
-        'Own multiple customer-facing web pages on Amazon.com, including New to Grocery, Emerging Brands, Grocery \u201cFor You,\u201d and Amazon Fresh Storefront, plus all new page creation across the Grocery storefront.',
-        'Scaling the program 10x year over year, from 35 campaigns in 2025 to 350+ in 2026, while lifting click-through rate ~40% through sharper GTM strategy and creative testing.',
-        'Use AI tools to independently design and build a performance dashboard now used weekly by the marketing team and three outside agencies, tracking 300+ campaigns across 70+ brands.'
+        'Owned multiple customer-facing web pages on Amazon.com, including New to Grocery, Emerging Brands, Grocery \u201cFor You,\u201d and Amazon Fresh Storefront, plus all new page creation across the Grocery storefront.',
+        'Scaled the program 10x year over year, from 35 campaigns in 2025 to 350+ in 2026, while lifting click-through rate ~40% through sharper GTM strategy and creative testing.',
+        'Used AI tools to independently design and build a performance dashboard used weekly by the marketing team and three outside agencies, tracking 300+ campaigns across 70+ brands.'
       ]
     },
     {
@@ -88,8 +89,8 @@ var TIG = {
       blurb:'Six months working remotely from the mountains in Park City. Same accounts and GTM pilots, much better views.', tags:['Remote','Mountain office'] },
     { id:'amazon-hub', city:'seattle', accent:'blue', years:'Oct 2023 \u2013 Dec 2025', company:'Amazon', role:'Partner Management, Hub Delivery',
       blurb:'Back in Seattle as one of the first hires on Amazon Hub Delivery when it had zero partners. Helped write the playbook, built the onboarding packet and email series that became the national standard, and managed 250+ partners across Seattle and LA.', tags:['0 to 250+ partners','Onboarding packet','National standard'] },
-    { id:'amazon-nyc', city:'nyc', accent:'orange', years:'Dec 2025 \u2013 Present', company:'Amazon', role:'Marketing Manager, Worldwide Grocery Stores', current:true,
-      blurb:'Moved to New York to own customer-facing marketing for New & Emerging Brands across Amazon Fresh and Grocery: 10x campaign growth, ~40% CTR lift, and a dashboard the team and three agencies use weekly.', tags:['10x campaigns','~40% CTR lift','Dashboard'] }
+    { id:'amazon-nyc', city:'nyc', accent:'orange', years:'Dec 2025 \u2013 Present', company:'Amazon', role:'Marketing Manager, Amazon Grocery & Whole Foods Market', current:true,
+      blurb:'Moved to New York to build the marketing for New & Emerging Brands across Amazon Fresh and Grocery (10x campaign growth, ~40% CTR lift, and a dashboard the team and three agencies used weekly), then took on tech and AI marketing for Amazon Grocery and Whole Foods Market.', tags:['10x campaigns','~40% CTR lift','Tech & AI'] }
   ],
   education: {
     school: 'University of Washington', where: 'Seattle, WA', degree: 'BA, Marketing Communications', year: 'Class of 2022'
@@ -102,8 +103,8 @@ var TIG = {
   },
   projects: [
     {
-      id: 'eb', n: 1, company: 'Amazon', name: 'Emerging Brands, rebuilt', tag: 'Amazon.com · Worldwide Grocery', accent: 'orange',
-      overview: 'I led the full overhaul of the Emerging Brands experience on Amazon.com within Worldwide Grocery. The previous page lacked strong storytelling, organization, and a clear customer journey for discovering new brands and products.',
+      id: 'eb', n: 1, company: 'Amazon', name: 'Emerging Brands, rebuilt', tag: 'Amazon.com · Amazon Grocery & Whole Foods Market', accent: 'orange',
+      overview: 'I led the full overhaul of the Emerging Brands experience on Amazon.com within Amazon Grocery and Whole Foods Market. The previous page lacked strong storytelling, organization, and a clear customer journey for discovering new brands and products.',
       execution: 'I independently redesigned the page experience from the ground up, including layout structure, vendor placement strategy, campaign organization, and overall brand presentation. I focused on creating a cleaner, more modern experience that made it easier for customers to discover emerging products while also improving visibility opportunities for vendors.',
       results: 'The redesigned experience created a more scalable and engaging destination for New and Emerging Brands on Amazon.com, improving overall organization, brand visibility, and customer experience across the page.',
       metrics: [['10x', 'campaign growth YoY'], ['350+', 'campaigns in 2026'], ['~40%', 'CTR lift']],

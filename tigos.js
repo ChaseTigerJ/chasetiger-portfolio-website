@@ -355,7 +355,10 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     terminal:   { title:'Terminal',     icon:'terminal',   tile:'terminal',   w:760, h:480 },
     settings:   { title:'Settings',     icon:'gear',       tile:'settings',   w:640, h:600 },
     games:      { title:'Arcade',       icon:'gamepad',    tile:'games',      w:900, h:680, hidden:true },   /* hidden apps: no dock, no default Spotlight list, no ls. The terminal (`game`, `pets`) or a Spotlight search by name opens them */
-    pets:       { title:'Pets',         icon:'paw',        tile:'paw',       w:820, h:620, hidden:true }
+    pets:       { title:'Pets',         icon:'paw',        tile:'paw',       w:820, h:620, hidden:true },
+    /* desk apps: files live on a desktop, so a desktop or a tablet only (a phone has none). Hidden too: Spotlight, the right-click menus and the terminal find them */
+    jot:        { title:'Jot',          icon:'jot',        tile:'jot',        w:860, h:580, hidden:true, desk:true },
+    den:        { title:'Den',          icon:'den',        tile:'den',        w:820, h:520, hidden:true, desk:true }
   };
   var VIS = function(){ return Object.keys(APPS).filter(function(k){ return !APPS[k].hidden; }); };
   var DOCK_ORDER = ['about','projects','experience','journey','resume','skills','contact','terminal'];
@@ -574,7 +577,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function open(id, opts){
     opts = opts || {};
     var a = APPS[id]; if(!a) return;
-    if(a.sys && isPhone()) return;   /* the Trash, folders and Get Info are desktop features; a phone has none of them */
+    if((a.sys || a.desk) && isPhone()) return;   /* the Trash, folders, Get Info, Jot and Den are desktop features; a phone has none of them */
     if(WM.wins[id]){ var ex = WM.wins[id]; if(ex.min){ restore(ex); } focus(ex); if(opts.route && ex.route) ex.route(opts.route); return ex; }
     if(isMobile()){ Object.keys(WM.wins).forEach(function(k){ var o = WM.wins[k]; o.el.remove(); delete WM.wins[k]; }); }   // phones: one app at a time
     var el = document.createElement('section'); el.className = 'win'; el.setAttribute('role','dialog'); el.setAttribute('aria-label', a.title); el.dataset.app = id;
@@ -1411,7 +1414,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       stats: function(){ TIG.stats.forEach(function(s){ print(o(esc(s.big))+'  '+esc(s.label)+'  <span class="dim">'+esc(s.sub)+'</span>'); }); },
       resume: function(){ open('resume'); print('opening Resume.app'); },
       journey: function(a){ open('journey', a ? { route:a } : {}); TIG.journey.forEach(function(s, i){ var c = TIG.cities[s.city]; print(o(i+1)+'  '+esc(c.city)+', '+esc(c.state)+'  <span class="dim">'+esc(s.years)+'</span>  '+esc(s.company)); }); }, map: function(){ CMD.journey(); }, travel: function(){ CMD.journey(); },
-      open: function(arg){ if(arg === '.' || arg === '') { print('opening Finder\u2026 just kidding, this is a portfolio.'); return; } if(APPS[arg]){ open(arg); print('opening '+arg); } else print('no app named "'+esc(arg)+'". try: '+VIS().join(', ')); },
+      open: function(arg){ if(arg === '.' || arg === '') { if(denOpen('')){ print('opening Den'); return; } print('opening Finder\u2026 just kidding, this is a portfolio.'); return; } var nt = !APPS[arg] && jnoteNamed(arg); if(nt){ jotOpen(nt.id); print('opening '+esc(nt.name)+' in Jot'); return; } if(APPS[arg]){ open(arg); print('opening '+arg); } else print('no app named "'+esc(arg)+'". try: '+VIS().join(', ')); },
       clear: function(){ $$('.line', body).forEach(function(l){ l.remove(); }); },
       users: function(){ print(Object.keys(USERS).map(function(u){ return (u === USER.name ? o(u)+' <span class="dim">(you)</span>' : u); }).join('   ')); print('switch with '+o('su &lt;user&gt;'), 'dim'); },
       su: function(arg){
@@ -1425,11 +1428,11 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       logout: function(){ print('logging out '+USER.name+'\u2026'); setTimeout(loginScreen, 400); },
       exit: function(){ CMD.logout(); },
       sudo: function(arg){ if(/make me a sandwich/i.test(arg)) { print('okay.'); return; } print(USER.name === 'chase' ? 'nice try. chase is already the admin here.' : USER.name+' is not in the sudoers file. This incident will be reported.', 'err'); },
-      ls: function(arg){ var f = VIS().map(function(k){ return k+'.app'; }); if(/-l|-la|-al/.test(arg)){ f.forEach(function(x){ print('drwxr-xr-x  '+USER.name+'  staff   4096  Sep  3 14:00  '+x); }); print('-rw-r--r--  '+USER.name+'  staff  117396  Sep  3 14:00  resume.pdf'); } else print(f.join('  ')+'  resume.pdf'); },
+      ls: function(arg){ var f = VIS().map(function(k){ return k+'.app'; }); if(/-l|-la|-al/.test(arg)){ f.forEach(function(x){ print('drwxr-xr-x  '+USER.name+'  staff   4096  Sep  3 14:00  '+x); }); print('-rw-r--r--  '+USER.name+'  staff  117396  Sep  3 14:00  resume.pdf'); } else print(f.concat(['resume.pdf'], isPhone() ? [] : ditems('').filter(function(x){ return x.kind === 'note'; }).map(function(x){ return esc(/\s/.test(x.name) ? '"'+x.name+'"' : x.name); })).join('  ')); },
       dir: function(a){ CMD.ls(a); },
       pwd: function(){ print(USERS[USER.name].home+'/tigos'); },
       cd: function(arg){ print(arg && arg !== '~' ? 'cd: '+esc(arg)+': this is a one-directory kind of place' : ''); },
-      cat: function(arg){ if(/resume/.test(arg)){ open('resume'); print('binary file. opening Resume.app instead.'); } else if(/\.env|passwd|shadow/.test(arg)){ print('cat: '+esc(arg)+': permission denied. nice try though.', 'err'); } else print('cat: '+esc(arg||'')+': no such file. try '+o('ls')); },
+      cat: function(arg){ var cn = jnoteNamed(arg); if(cn){ jotFlush(); print(esc(nbody(cn.id)) || '<span class="dim">('+esc(cn.name)+' is empty)</span>'); } else if(/resume/.test(arg)){ open('resume'); print('binary file. opening Resume.app instead.'); } else if(/\.env|passwd|shadow/.test(arg)){ print('cat: '+esc(arg)+': permission denied. nice try though.', 'err'); } else print('cat: '+esc(arg||'')+': no such file. try '+o('ls')); },
       rm: function(arg){ if(/-rf\s+\/|\*|~/.test(arg)){ print('rm: refusing to remove everything. Chase worked hard on this.', 'err'); toast('Phew', 'rm -rf / has been politely declined.'); } else print('rm: '+esc(arg||'')+': operation not permitted'); },
       mkdir: function(){ print('mkdir: read-only file system (it\u2019s a portfolio)'); }, touch: function(){ print('touch: read-only file system'); },
       echo: function(arg){ print(esc(arg.replace(/^["']|["']$/g, '')) || ''); },
@@ -1903,6 +1906,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     /* hidden apps never sit in the default list, but a search for them (or for what is inside them) finds them */
     items.push({ t:APPS.games.title, s:'Open app \u00b7 '+GAMES.length+' games', k:'App', hidden:true, tile:'games', icon:'gamepad', hay:'arcade game games play '+GAMES.map(function(g){ return g.id+' '+g.name; }).join(' '), go:function(){ open('games'); } });
     items.push({ t:APPS.pets.title, s:'Open app \u00b7 desktop companions', k:'App', hidden:true, tile:'paw', icon:'paw', hay:'pet pets companion '+Object.keys(PETS).map(function(k){ return k+' '+PETS[k].name+' '+PETS[k].label; }).join(' '), go:function(){ open('pets'); } });
+    items.push({ t:APPS.jot.title, s:'Open app \u00b7 notes, saved as text files', k:'App', hidden:true, desk:true, tile:'jot', icon:'jot', hay:'notes note notepad text txt markdown md write writing jot document doc', go:function(){ jotOpen(); } });
+    items.push({ t:APPS.den.title, s:'Open app \u00b7 browse your files and folders', k:'App', hidden:true, desk:true, tile:'den', icon:'den', hay:'finder files file folders folder browse explorer den documents', go:function(){ denOpen(''); } });
     GAMES.forEach(function(g){ items.push({ t:g.name, s:'Arcade game \u00b7 '+g.blurb, k:'Game', tile:'games', icon:'gamepad', art:g.icon, bg:g.color, hay:g.id+' game play arcade', go:function(){ open('games', { route:g.id }); } }); });
     Object.keys(PETS).forEach(function(k){ items.push({ t:PETS[k].name+' the '+PETS[k].label, s:'Pet \u00b7 bring them out', k:'Pet', tile:'paw face', icon:'paw', art:PETS[k].svg, hay:k+' pet pets', go:function(){ petSet(k); open('pets'); } }); });
     items.splice(items.findIndex(function(x){ return x.t === APPS.contact.title; }) + 1, 0, { t:'LinkedIn', s:'Open profile \u2197 \u00b7 '+TIG.contact.linkedinLabel, k:'App', tile:'linkedin', icon:'linkedin', hay:'linkedin social profile network connect message chase', go:function(){ window.open(TIG.contact.linkedin, '_blank', 'noopener'); toast('Opening LinkedIn', TIG.contact.linkedinLabel, 'linkedin'); } });
@@ -1917,11 +1922,14 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     return items;
   }
   var IDX = index(), spotHits = [];
+  /* notes change all the time, so they join the index at search time; phones have no Jot or Den, so neither they nor notes show there */
+  function spotNotes(){ return jnotes().map(function(it){ return { t:it.name, s:'Note \u00b7 '+dwhere(it)+' \u00b7 '+jwhen(it.m || it.t), k:'Note', desk:true, tile:'jot', icon:'jot', hay:nbody(it.id).slice(0, 20000), go:function(){ jotOpen(it.id); } }; }); }
   function spotRender(q){
     q = (q||'').trim().toLowerCase();
+    var ph = isPhone(), all = (ph ? IDX : IDX.concat(q ? spotNotes() : [])).filter(function(it){ return !(it.desk && ph); });
     /* rank: exact title, title prefix, title, subtitle, then the hidden search text, so typing a game or pet's name puts it first, ahead of the app that merely lists it */
     var rank = function(it){ var t = it.t.toLowerCase(), sub = (it.s||'').toLowerCase(), hay = (it.hay||'').toLowerCase(); return t === q ? 0 : t.indexOf(q) === 0 ? 1 : t.indexOf(q) > -1 ? 2 : sub.indexOf(q) > -1 ? 3 : hay.indexOf(q) > -1 ? 4 : 5; };
-    spotHits = IDX.filter(function(it){ if(!q) return it.k === 'App' && !it.hidden; return (it.t+' '+it.s+' '+(it.hay||'')).toLowerCase().indexOf(q) > -1; }).map(function(it, i){ return { it:it, i:i, r:rank(it) }; }).sort(function(a, b){ return a.r - b.r || a.i - b.i; }).map(function(x){ return x.it; }).slice(0, 10);   /* room for the Pets app plus all nine pets */
+    spotHits = all.filter(function(it){ if(!q) return it.k === 'App' && !it.hidden; return (it.t+' '+it.s+' '+(it.hay||'')).toLowerCase().indexOf(q) > -1; }).map(function(it, i){ return { it:it, i:i, r:rank(it) }; }).sort(function(a, b){ return a.r - b.r || a.i - b.i; }).map(function(x){ return x.it; }).slice(0, 10);   /* room for the Pets app plus all nine pets */
     spotSel = 0;
     spotRes.innerHTML = spotHits.length ? spotHits.map(function(it, i){ return '<button type="button" data-i="'+i+'" class="'+(i===0?'sel':'')+'"><span class="sm tile '+it.tile+'"'+(it.bg ? ' style="background:linear-gradient(145deg,'+it.bg+', rgba(0,0,0,.35) 140%)"' : '')+'>'+(it.art || ic(it.icon))+'</span><span><b>'+esc(it.t)+'</b><span>'+esc(it.s)+'</span></span><em>'+it.k+'</em></button>'; }).join('') : '<div class="spot-empty">No matches for \u201c'+esc(q)+'\u201d</div>';
     $$('button', spotRes).forEach(function(b){ b.addEventListener('click', function(){ spotGo(+b.getAttribute('data-i')); }); });
@@ -2466,6 +2474,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(t.closest('#spotlight, #lightbox, .egg, .tour-tip, .toast')) return null;
     var fw = t.closest('.fw');
     if(fw){ var fi = t.closest('.dicon'); return fi ? { kind:'icon', el:fi } : { kind:'fbg', el:fw }; }
+    var da = t.closest('.den-app'); if(da) return { kind:'denapp', el:da };
     if(t.closest('.win-body')) return null;
     var bar = t.closest('.win-bar');
     if(bar){ if(touch || isMobile() || t.closest('a[href]')) return null; return { kind:'win', el:bar.closest('.win') }; }
@@ -2543,12 +2552,98 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     setTimeout(function(){ try { $('[data-ok]', bg).focus({ preventScroll:true }); } catch(e){} }, 20);
     return bg;
   }
+/* tigOS core app.js, part 27: Den, the file browser. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
+  /* ---------------- Den ----------------
+     tigOS's Finder (a tiger keeps its things in a den). A sidebar of places (the Desktop, every note wherever it is, the apps, each
+     folder, the Trash) beside that place's icons. The icons are the desktop's own (27-desktop.js): click to select, drag them onto a
+     folder, a place in the sidebar, the desktop or the Trash, rename, Get Info and the same right-click menus. A folder opens in place,
+     with Back and Forward. Phones have no Den. */
+  var DEN = { loc:'', back:[], fwd:[], want:null };
+  function denOk(loc){ if(loc === '' || loc === '*notes' || loc === '*apps' || loc === 'trash') return true; var it = ditem(loc); return !!(it && it.kind === 'folder' && it.in !== 'trash'); }
+  function denLabel(loc){ return loc === '' ? 'Desktop' : loc === '*notes' ? 'Notes' : loc === '*apps' ? 'Applications' : loc === 'trash' ? 'Trash' : (ditem(loc) || { name:'Desktop' }).name; }
+  function denApps(){ return VIS().concat(['jot', 'den']); }
+  /* open Den at a place, optionally with one item selected (Show in Den) */
+  function denOpen(loc, sel){
+    if(isPhone()) return null;
+    loc = loc || ''; var w = WM.wins.den;
+    if(!w){ DEN.want = loc; w = open('den'); if(!w) return null; }
+    else { if(w.min) restore(w); focus(w); denGo(loc); }
+    if(sel){ var e = $('.den-fw .dicon[data-id="'+sel+'"]', w.body); if(e){ dselOnly(e); try { e.scrollIntoView({ block:'nearest' }); } catch(x){} } }
+    return w;
+  }
+  function denGo(loc, quiet){
+    if(!denOk(loc)) loc = '';
+    if(loc !== DEN.loc && !quiet){ DEN.back.push(DEN.loc); if(DEN.back.length > 40) DEN.back.shift(); DEN.fwd = []; }
+    DEN.loc = loc; denDraw();
+  }
+  function denStep(dir){
+    var from = dir < 0 ? DEN.back : DEN.fwd, to = dir < 0 ? DEN.fwd : DEN.back;
+    while(from.length){ var l = from.pop(); if(denOk(l) && l !== DEN.loc){ to.push(DEN.loc); DEN.loc = l; break; } }
+    denDraw();
+  }
+  RENDER.den = function(w){
+    w.el.classList.add('den-win');
+    w.tools.innerHTML = '<button type="button" data-den="back" aria-label="Back" title="Back">'+ic('back')+'</button><button type="button" data-den="fwd" aria-label="Forward" title="Forward">'+ic('fwd')+'</button>'+
+      '<button type="button" data-den="folder" aria-label="New Folder" title="New Folder">'+ic('folder-plus')+'</button><button type="button" data-den="note" aria-label="New Note" title="New Note">'+ic('jot')+'</button>'+
+      '<button type="button" data-den="empty" title="Empty Trash">Empty</button>';
+    w.body.innerHTML = '<div class="denw"><nav class="den-side" aria-label="Places"></nav><section class="den-main"></section></div>';
+    $$('[data-den]', w.tools).forEach(function(b){ b.addEventListener('click', function(){
+      var k = b.getAttribute('data-den'), L = DEN.loc;
+      if(k === 'back') denStep(-1);
+      if(k === 'fwd') denStep(1);
+      if(k === 'folder' && L === ''){ DFOCUS = $('.den-fw', w.body) || DFOCUS; dnewFolder(null); }
+      if(k === 'note') jotNewIn(L === '*notes' || !denOk(L) || L === 'trash' || L === '*apps' ? '' : L);
+      if(k === 'empty') demptyAsk();
+    }); });
+    $('.den-side', w.body).addEventListener('click', function(e){ var b = e.target.closest('[data-loc]'); if(b) denGo(b.getAttribute('data-loc')); });
+    /* Applications: click selects, a double-click (or a tap) opens, as in Finder */
+    var main = $('.den-main', w.body);
+    main.addEventListener('click', function(e){ var b = e.target.closest('.den-app'); $$('.den-app.sel', main).forEach(function(x){ if(x !== b) x.classList.remove('sel'); }); if(!b) return; b.classList.add('sel'); if(Date.now() - CTX.touchT < 900) open(b.getAttribute('data-app'), { from:b }); });
+    main.addEventListener('dblclick', function(e){ var b = e.target.closest('.den-app'); if(b) open(b.getAttribute('data-app'), { from:b }); });
+    main.addEventListener('keydown', function(e){ var b = e.target.closest && e.target.closest('.den-app'); if(b && e.key === 'Enter'){ e.preventDefault(); open(b.getAttribute('data-app'), { from:b }); } });
+    if(DEN.want != null){ DEN.loc = DEN.want; DEN.want = null; }
+    DEN.back = []; DEN.fwd = [];
+    denDraw();
+  };
+  function denDraw(){
+    var w = WM.wins.den; if(!w) return;
+    var side = $('.den-side', w.body), main = $('.den-main', w.body); if(!side || !main) return;
+    if(!denOk(DEN.loc)) DEN.loc = '';
+    var L = DEN.loc, folders = ditems('').filter(function(x){ return x.kind === 'folder'; }).sort(dcmp('name'));
+    var row = function(loc, icon, label, tag){ return '<button type="button" class="'+(L === loc ? 'on' : '')+'" data-loc="'+esc(loc)+'"'+(L === loc ? ' aria-current="page"' : '')+'>'+ic(icon)+'<span>'+esc(label)+'</span>'+(tag ? '<i class="dtag" style="background:'+tagHex(tag)+'"></i>' : '')+'</button>'; };
+    var ss = side.scrollTop;
+    side.innerHTML = '<div class="den-sh">Favorites</div>'+row('', 'wall', 'Desktop')+row('*notes', 'jot', 'Notes')+row('*apps', 'grid', 'Applications')+
+      (folders.length ? '<div class="den-sh">Folders</div>'+folders.map(function(f){ return row(f.id, 'folder', f.name, f.tag); }).join('') : '')+
+      '<div class="den-sh">Locations</div>'+row('trash', dtrashed().length ? 'trash-full' : 'trash', 'Trash');
+    side.scrollTop = ss;
+    var st = main.scrollTop, had = DFOCUS && DFOCUS !== DLAYER && main.contains(DFOCUS), sel = dselIds(main), n;
+    if(L === '*apps'){
+      var apps = denApps(); n = apps.length;
+      main.innerHTML = '<div class="den-apps" role="list">'+apps.map(function(k){ return '<button type="button" class="den-app" role="listitem" data-app="'+k+'" aria-label="'+esc(APPS[k].title)+'">'+tileHTML(k)+'<span>'+esc(APPS[k].title)+'</span></button>'; }).join('')+'</div><div class="fw-foot">'+n+' apps</div>';
+    } else {
+      var list = (L === '' ? ditems('') : L === '*notes' ? jnotes() : L === 'trash' ? dtrashed() : dkids(L)).slice();
+      list.sort(L === 'trash' ? function(a, b){ return (b.t2 || 0) - (a.t2 || 0); } : L === '*notes' ? function(a, b){ return (b.m || b.t) - (a.m || a.t); } : dcmp('name'));
+      n = list.length;
+      var empty = L === '' ? 'Nothing on the Desktop yet.' : L === '*notes' ? 'No notes yet. New Note starts one.' : null;
+      main.innerHTML = '<div class="fw den-fw'+(L === 'trash' ? ' trashw' : '')+'" data-folder="'+esc(L)+'">'+fgrid(list, L, empty)+'<div class="fw-foot">'+(n === 1 ? '1 item' : n+' items')+'</div></div>';
+      sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', main); if(e) e.classList.add('sel'); });
+      if(had) DFOCUS = $('.den-fw', main);   /* a redraw keeps the keyboard here */
+    }
+    main.scrollTop = st;
+    var t = $('.win-title', w.el); if(t) t.innerHTML = ic('den')+esc(denLabel(L));
+    w.el.setAttribute('aria-label', 'Den, '+denLabel(L));
+    var tb = function(k){ return $('[data-den="'+k+'"]', w.tools); };
+    tb('back').disabled = !DEN.back.some(denOk); tb('fwd').disabled = !DEN.fwd.some(denOk);
+    tb('folder').hidden = L !== ''; tb('note').hidden = L === 'trash' || L === '*apps';
+    tb('empty').hidden = L !== 'trash'; tb('empty').disabled = !dtrashed().length;
+  }
 /* tigOS core app.js, part 27: desktop items. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- desktop: icons, folders, the Trash, Get Info ----------------
      Saved per user on this device (localStorage, a cookie fallback for the embed): the desktop items (app aliases and folders, each on a
      grid cell counted from the top right, like macOS), what the desktop shows (icons, the welcome text, icon size, sort order), the dock
      layout (27-dock-edit.js) and the apps that open at login. A fresh visit has none of it: the clean hero, the dock as the launcher.
-     An item is { id, kind:'app'|'folder', app, name, in:'' (desktop) | folder id | 'trash', c, r, t:added, tag, from, fc, fr }. */
+     An item is { id, kind:'app'|'folder'|'note', app, name, in:'' (desktop) | folder id | 'trash', c, r, t:added, tag, from, fc, fr }; a note
+     (27-jot.js) adds m:modified and auto (named from its first line until renamed), and keeps its text in its own store. */
   var DSTORE = {
     get: function(){ var raw = null; try { raw = localStorage.getItem('tigos.desk'); } catch(e){} if(!raw){ try { var m = document.cookie.match(/(?:^|; )tigos\.desk=([^;]*)/); if(m) raw = decodeURIComponent(m[1]); } catch(e){} } return raw; },
     set: function(raw){ try { localStorage.setItem('tigos.desk', raw); } catch(e){} try { var v = encodeURIComponent(raw); if(v.length < 3600){ document.cookie = 'tigos.desk='+v+'; max-age=31536000; path=/; SameSite=None; Secure'; document.cookie = 'tigos.desk='+v+'; max-age=31536000; path=/; SameSite=Lax'; } } catch(e){} }
@@ -2564,13 +2659,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dview(k){ var v = DK().view; return k in v ? v[k] : DVIEW[k]; }
   function dviewSet(k, v){ var d = DK(); if(v === DVIEW[k]) delete d.view[k]; else d.view[k] = v; deskSave(); drender(); }
   function ditem(id){ return DK().items[id] || null; }
-  function dlive(it){ return it && (it.kind === 'folder' || (it.kind === 'app' && APPS[it.app] && !APPS[it.app].sys)); }
+  function dlive(it){ return it && (it.kind === 'folder' || it.kind === 'note' || (it.kind === 'app' && APPS[it.app] && !APPS[it.app].sys)); }
   function ditems(where){ var d = DK(); return Object.keys(d.items).map(function(k){ return d.items[k]; }).filter(function(it){ return dlive(it) && (it.in || '') === where; }); }
   function dinside(it){ return it.in && it.in !== 'trash' && ditem(it.in) ? it.in : (it.in === 'trash' ? 'trash' : ''); }
   function dwhere(it){ var w = dinside(it); return w === 'trash' ? 'Trash' : w ? ditem(w).name : 'Desktop'; }
   function dkids(fid){ return ditems(fid); }
   function dnameFree(name, where, skip){ return !ditems(where).some(function(x){ return x.id !== skip && x.name.toLowerCase() === name.toLowerCase(); }); }
-  function dnameNew(base, where){ var n = base, i = 2; while(!dnameFree(n, where)) n = base+' '+(i++); return n; }
+  function dnameNew(base, where){ var m = String(base).match(/^(.*\S)(\.(?:txt|md|markdown|text))$/i), b = m ? m[1] : base, x = m ? m[2] : '', n = base, i = 2; while(!dnameFree(n, where)) n = b+' '+(i++)+x; return n; }   /* a note keeps its extension: notes 2.md, never notes.md 2 */
   function dnew(kind, props){
     var d = DK(), id = 'd'+(d.seq++);
     var it = { id:id, kind:kind, app:'', name:'', in:'', c:-1, r:-1, t:Date.now(), tag:'' };
@@ -2601,7 +2696,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     return g;
   }
   function dcmp(by){
-    var kind = function(x){ return x.kind === 'folder' ? 0 : 1; }, nm = function(a, b){ return a.name.localeCompare(b.name, undefined, { numeric:true, sensitivity:'base' }); };
+    var kind = function(x){ return x.kind === 'folder' ? 0 : x.kind === 'note' ? 2 : 1; }, nm = function(a, b){ return a.name.localeCompare(b.name, undefined, { numeric:true, sensitivity:'base' }); };
     if(by === 'kind') return function(a, b){ return kind(a) - kind(b) || nm(a, b); };
     if(by === 'date') return function(a, b){ return b.t - a.t || nm(a, b); };
     return nm;
@@ -2626,16 +2721,19 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     return best || { c:c, r:r };
   }
   var FOLDER_SVG = '<svg class="dfold" viewBox="0 0 64 52" aria-hidden="true"><path class="fb" d="M4 9a5 5 0 0 1 5-5h14.6a4 4 0 0 1 3 1.4L30 9h25a5 5 0 0 1 5 5v29a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="fbs" d="M4 9a5 5 0 0 1 5-5h14.6a4 4 0 0 1 3 1.4L30 9h25a5 5 0 0 1 5 5v29a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="ff" d="M4 18a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="fs" d="M4 18a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" fill="url(#lgFold)"/><path class="fh" d="M8.5 15.2h47"/></svg>';
-  function dart(it){ return it.kind === 'folder' ? FOLDER_SVG : tileHTML(it.app); }
+  /* a text file: a white page with a folded corner, ruled lines and its extension, like Finder's document icons */
+  function noteSVG(name){ return '<svg class="dnote" viewBox="0 0 48 60" aria-hidden="true"><path class="np" d="M7 2.5h24.5L43.5 14.5v41a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-51a2 2 0 0 1 2-2z"/><path class="nf" d="M31.5 2.5v10a2 2 0 0 0 2 2h10z"/><path class="nl" d="M11.5 21h20M11.5 26.5h25M11.5 32h25M11.5 37.5h16"/><text class="nx" x="24" y="51.5" text-anchor="middle">'+(/\.(md|markdown)$/i.test(name || '') ? 'MD' : 'TXT')+'</text></svg>'; }
+  function dart(it){ return it.kind === 'folder' ? FOLDER_SVG : it.kind === 'note' ? noteSVG(it.name) : tileHTML(it.app); }
+  function dkindLabel(it){ return it.kind === 'folder' ? ', folder' : it.kind === 'note' ? ', text document' : ''; }
   function diconHTML(it){ return '<span class="dart"'+(it.kind === 'folder' && it.tag ? ' style="--fc:'+tagHex(it.tag)+'"' : '')+'>'+dart(it)+'</span><span class="dlab">'+(it.tag ? '<i class="dtag" style="background:'+tagHex(it.tag)+'"></i>' : '')+'<span class="dname">'+esc(it.name)+'</span></span>'; }
   function dmake(it){
     var el = document.createElement('div');
     el.className = 'dicon'; el.setAttribute('data-id', it.id); el.setAttribute('data-kind', it.kind); if(it.app) el.setAttribute('data-app', it.app);
-    el.setAttribute('role', 'button'); el.setAttribute('aria-label', it.name+(it.kind === 'folder' ? ', folder' : ''));
+    el.setAttribute('role', 'button'); el.setAttribute('aria-label', it.name+dkindLabel(it));
     el.innerHTML = diconHTML(it); el._sig = diconHTML(it);
     return el;
   }
-  function dsync(el, it){ var h = diconHTML(it); if(el._sig !== h && !el.querySelector('input')){ el.innerHTML = h; el._sig = h; el.setAttribute('aria-label', it.name+(it.kind === 'folder' ? ', folder' : '')); } }
+  function dsync(el, it){ var h = diconHTML(it); if(el._sig !== h && !el.querySelector('input')){ el.innerHTML = h; el._sig = h; el.setAttribute('aria-label', it.name+dkindLabel(it)); } }
   var DLAYER = document.createElement('div'); DLAYER.className = 'dicons'; DLAYER.id = 'dicons'; DLAYER.setAttribute('aria-label', 'Desktop'); desk.insertBefore(DLAYER, winsEl);
   function drender(){
     if(!DLAYER) return;
@@ -2669,17 +2767,18 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function drename(id){
     var it = ditem(id); if(!it) return;
     if(DREN) DREN.done(true);
-    var host = dinside(it) === '' ? DLAYER : $('.fw[data-folder="'+dinside(it)+'"]'), el = host && $('.dicon[data-id="'+id+'"]', host); if(!el) return;
+    var mine = DFOCUS && DFOCUS !== DLAYER && DFOCUS.isConnected && $('.dicon[data-id="'+id+'"]', DFOCUS) ? DFOCUS : null;   /* renamed from a Den window: edit it there, not on a desktop it may cover */
+    var host = mine || (dinside(it) === '' ? DLAYER : $('.fw[data-folder="'+dinside(it)+'"]')), el = host && $('.dicon[data-id="'+id+'"]', host); if(!el) return;
     var nm = $('.dname', el), inp = document.createElement('input');
     inp.type = 'text'; inp.className = 'dren'; inp.value = it.name; inp.maxLength = 40; inp.spellcheck = false; inp.setAttribute('aria-label', 'Name');
     nm.replaceWith(inp); dselOnly(el); el.classList.add('renaming');
     var where = dinside(it), live = true;
     DREN = { id:id, done:function(keep){
       if(!live) return; live = false; DREN = null; el.classList.remove('renaming'); if(inp.parentNode) inp.replaceWith(nm);
-      var v = inp.value.replace(/\s+/g, ' ').trim().slice(0, 40);
+      var v = inp.value.replace(/\s+/g, ' ').trim().slice(0, 40); if(v && it.kind === 'note') v = nname(v);
       if(keep && v && v !== it.name){
         if(!dnameFree(v, where, id)){ toast('The name \u201c'+v+'\u201d is already taken', 'Please choose a different name.'); }
-        else { it.name = v; deskSave(); }
+        else { it.name = v; delete it.auto; deskSave(); }
       }
       el._sig = ''; dsync(el, it); drender(); fsyncAll(); winTitles();
     } };
@@ -2708,6 +2807,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var it = ditem(id); if(!it) return;
     if(DREN && DREN.id === id) return;
     if(it.in === 'trash'){ toast('\u201c'+it.name+'\u201d is in the Trash', 'Put it back first, then open it.'); return; }
+    if(it.kind === 'note'){ jotOpen(id, from); return; }
+    if(it.kind === 'folder' && from && from.closest && from.closest('.denw')){ denGo(id); return; }   /* Finder: a folder opens in place */
     if(it.kind === 'folder'){ fopen(id, from); return; }
     if(APPS[it.app]) open(it.app, { from:from });
   }
@@ -2737,8 +2838,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dempty(){
     var d = DK(), gone = {};
     dtrashed().forEach(function(it){ gone[it.id] = 1; });
-    Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(gone[k] || (it.in && gone[it.in])) { var fw = WM.wins['fold-'+k]; if(fw) close(fw); delete d.items[k]; } });
-    deskSave(); drender();
+    var bodies = [];
+    Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(gone[k] || (it.in && gone[it.in])) { var fw = WM.wins['fold-'+k]; if(fw) close(fw); if(it.kind === 'note') bodies.push(k); delete d.items[k]; } });
+    nforget(bodies); deskSave(); drender();
   }
   function demptyAsk(){
     var n = dtrashed().length; if(!n) return;
@@ -2756,14 +2858,15 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     RENDER[k] = function(w){ fdraw(w, id); };
     return open(k, { from:from });
   }
-  function fgrid(list, where){
-    if(!list.length) return '<div class="fw-empty">'+(where === 'trash' ? 'The Trash is empty.' : 'This folder is empty.'+(isMobile() ? '' : ' Drag items here.'))+'</div>';
+  function fgrid(list, where, empty){
+    if(!list.length) return '<div class="fw-empty">'+(empty || (where === 'trash' ? 'The Trash is empty.' : 'This folder is empty.'+(isMobile() ? '' : ' Drag items here.')))+'</div>';
     return '<div class="fw-grid">'+list.map(function(it){ return '<div class="dicon fi" data-id="'+it.id+'" data-kind="'+it.kind+'"'+(it.app ? ' data-app="'+it.app+'"' : '')+' role="button" aria-label="'+esc(it.name)+'">'+diconHTML(it)+'</div>'; }).join('')+'</div>';
   }
   function fdraw(w, id){
     var it = ditem(id); if(!it){ return; }
-    var list = dkids(id).sort(dcmp('name')), sel = dselIds(w.body);
+    var list = dkids(id).sort(dcmp('name')), sel = dselIds(w.body), had = DFOCUS && DFOCUS !== DLAYER && w.body.contains(DFOCUS);
     w.body.innerHTML = '<div class="fw" data-folder="'+id+'">'+fgrid(list, id)+'<div class="fw-foot">'+(list.length === 1 ? '1 item' : list.length+' items')+'</div></div>';
+    if(had) DFOCUS = $('.fw', w.body);   /* a redraw keeps the keyboard on this folder */
     sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', w.body); if(e) e.classList.add('sel'); });
   }
   RENDER.trash = function(w){
@@ -2778,6 +2881,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       if(a.sys === 'folder'){ var it = ditem(a.folder); if(!it || it.in === 'trash'){ close(w); return; } fdraw(w, a.folder); }
       if(a.sys === 'trash') RENDER.trash(w);
       if(a.sys === 'info' && INFO.t) RENDER.info(w);
+      if(k === 'den') denDraw();
+      if(k === 'jot') jotSync();
     });
   }
   function winTitles(){
@@ -2799,10 +2904,11 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var row = function(k, v){ rows.push('<div class="gi-r"><span>'+esc(k)+'</span><b>'+v+'</b></div>'); };
     if(t.type === 'item'){
       var it = ditem(t.id); if(!it || !dlive(it)){ INFO.t = { type:'desk' }; RENDER.info(w); return; }
-      name = it.name; head = '<span class="gi-art">'+(it.kind === 'folder' ? '<span class="dart"'+(it.tag ? ' style="--fc:'+tagHex(it.tag)+'"' : '')+'>'+FOLDER_SVG+'</span>' : tileHTML(it.app))+'</span>';
-      if(it.kind === 'folder'){ var n = dkids(it.id).length; kind = 'Folder'; sub = n === 1 ? '1 item' : n+' items'; row('Kind', 'Folder'); row('Contains', esc(sub)); }
+      name = it.name; head = '<span class="gi-art">'+(it.kind === 'folder' ? '<span class="dart"'+(it.tag ? ' style="--fc:'+tagHex(it.tag)+'"' : '')+'>'+FOLDER_SVG+'</span>' : it.kind === 'note' ? '<span class="dart">'+noteSVG(it.name)+'</span>' : tileHTML(it.app))+'</span>';
+      if(it.kind === 'note'){ if(JOT.id === it.id) jotFlush(); var tx = nbody(it.id), wc = nwords(tx), md = /\.(md|markdown)$/i.test(it.name); kind = md ? 'Markdown Document' : 'Plain Text Document'; sub = wc === 1 ? '1 word' : wc+' words'; row('Kind', kind); row('Size', esc(sub+' \u00b7 '+tx.length+' characters')); row('Opens with', 'Jot'); }
+      else if(it.kind === 'folder'){ var n = dkids(it.id).length; kind = 'Folder'; sub = n === 1 ? '1 item' : n+' items'; row('Kind', 'Folder'); row('Contains', esc(sub)); }
       else { kind = 'Alias'; sub = 'Opens '+esc(APPS[it.app].title); row('Kind', 'Alias'); row('Original', esc(APPS[it.app].title)+' (app)'); row('In the Dock', dockHas(it.app) ? 'Yes' : 'No'); }
-      row('Where', esc(dwhere(it))); row('Added', esc(infoFmt(it.t)));
+      row('Where', esc(dwhere(it))); row(it.kind === 'note' ? 'Created' : 'Added', esc(infoFmt(it.t))); if(it.kind === 'note' && it.m) row('Modified', esc(infoFmt(it.m)));
       if(it.in === 'trash' && it.t2) row('Trashed', esc(infoFmt(it.t2)));
       tags = it.tag || ''; ren = it.id;
     } else if(t.type === 'app'){
@@ -2830,7 +2936,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       '<div class="gi-sec"><div class="eyebrow">General</div>'+rows.join('')+'</div>'+nameRow+tagRow+'</div>';
     $$('.gi-tags .ctag', w.body).forEach(function(b){ b.addEventListener('click', function(){ var v = b.getAttribute('data-tag'); dtag([ren], v === tags ? '' : v); }); });
     var ni = $('.gi-name', w.body);
-    if(ni){ var commit = function(){ var it2 = ditem(ren), v = ni.value.replace(/\s+/g, ' ').trim().slice(0, 40); if(!it2 || !v || v === it2.name) { ni.value = it2 ? it2.name : ''; return; } if(!dnameFree(v, dinside(it2), ren)){ toast('The name \u201c'+v+'\u201d is already taken', 'Please choose a different name.'); ni.value = it2.name; return; } it2.name = v; deskSave(); drender(); winTitles(); };
+    if(ni){ var commit = function(){ var it2 = ditem(ren), v = ni.value.replace(/\s+/g, ' ').trim().slice(0, 40); if(v && it2 && it2.kind === 'note') v = nname(v); if(!it2 || !v || v === it2.name) { ni.value = it2 ? it2.name : ''; return; } if(!dnameFree(v, dinside(it2), ren)){ toast('The name \u201c'+v+'\u201d is already taken', 'Please choose a different name.'); ni.value = it2.name; return; } it2.name = v; delete it2.auto; deskSave(); drender(); winTitles(); };
       ni.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); ni.blur(); } if(e.key === 'Escape'){ e.stopPropagation(); var it3 = ditem(ren); ni.value = it3 ? it3.name : ''; ni.blur(); } });
       ni.addEventListener('change', commit); ni.addEventListener('blur', commit); }
   };
@@ -2875,7 +2981,10 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(t.closest('#dock')) return apps && from !== 'trash' ? { kind:'dock', el:$('#dock') } : { kind:'none' };
     var fi = t.closest('.dicon[data-kind="folder"]');
     if(fi && st.ids.indexOf(fi.getAttribute('data-id')) < 0 && !fi.closest('.trashw') && !fi.closest('.dghost')) return folders ? { kind:'none' } : { kind:'folder', id:fi.getAttribute('data-id'), el:fi };
+    var side = t.closest('.den-side [data-loc]');   /* a place in Den's sidebar */
+    if(side){ var L = side.getAttribute('data-loc'); if(L === '*notes' || L === '*apps') return { kind:'none' }; if(L === 'trash') return from === 'trash' ? { kind:'none' } : { kind:'trash', el:side }; return (folders && L !== '') || L === from ? { kind:'none' } : { kind:'folder', id:L, el:side }; }
     var win = t.closest('.win');
+    if(win && win.dataset.app === 'den'){ var D = DEN.loc; if(D === '*notes' || D === '*apps') return { kind:'none' }; if(D === 'trash') return from === 'trash' ? { kind:'none' } : { kind:'trash', el:win }; return (folders && D !== '') || D === from ? { kind:'none' } : { kind:'folder', id:D, el:win }; }
     if(win){ var a = APPS[win.dataset.app] || {};
       if(a.sys === 'folder') return folders || from === a.folder ? { kind:'none', el:null } : { kind:'folder', id:a.folder, el:win };
       if(a.sys === 'trash') return from === 'trash' ? { kind:'none' } : { kind:'trash', el:win };
@@ -2901,7 +3010,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var unhide = function(){ st.sel.forEach(function(s){ s.classList.remove('dragging'); }); };
     var sink = function(){ gh.classList.add('sink'); setTimeout(function(){ gh.remove(); }, 220); };
     if(drop.kind === 'trash'){ sink(); dtrash(st.ids); unhide(); return; }
-    if(drop.kind === 'folder'){ sink(); var n = dmove(st.ids, drop.id); unhide(); if(n){ var f = $('.dicon[data-id="'+drop.id+'"]', DLAYER); if(f){ f.classList.remove('flash'); void f.offsetWidth; f.classList.add('flash'); } } return; }
+    if(drop.kind === 'folder'){ sink(); var n = dmove(st.ids, drop.id); unhide(); if(n && drop.id === '' && !dview('icons')) dviewSet('icons', true); if(n){ var f = $('.dicon[data-id="'+drop.id+'"]', DLAYER); if(f){ f.classList.remove('flash'); void f.offsetWidth; f.classList.add('flash'); } } return; }
     if(drop.kind === 'dock'){ var added = [], at = dockGapIndex(); dockGapClear(true); st.ids.forEach(function(id){ var it = d.items[id]; if(it && it.kind === 'app' && !dockHas(it.app)){ dockPin(it.app, true, at >= 0 ? at++ : -1); added.push(APPS[it.app].title); } else if(it && it.kind === 'app'){ dockBounce(it.app); } });
       if(added.length) toast(added.length === 1 ? added[0]+' is in the Dock' : added.length+' apps added to the Dock', 'Right-click it there for options.');
       snapBack(); return; }
@@ -2965,7 +3074,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dockDefault(){ var l = DOCK_ORDER.slice(); if(USER.name !== 'chase') l.splice(l.indexOf('terminal'), 0, 'games', 'pets'); return l; }   /* GreggyD and Ariel keep the Arcade and Pets beside the portfolio apps */
   function dockList(){
     var d = DK(), l = Array.isArray(d.dock) ? d.dock : dockDefault(), seen = {};
-    return l.filter(function(id){ if(seen[id] || !APPS[id] || APPS[id].sys) return false; seen[id] = 1; return true; });
+    return l.filter(function(id){ if(seen[id] || !APPS[id] || APPS[id].sys || APPS[id].desk && isPhone()) return false; seen[id] = 1; return true; });   /* Jot or Den kept in the Dock stays off a phone's */
   }
   function dockSave(list){ var d = DK(); if(list.join() === dockDefault().join()) delete d.dock; else d.dock = list.slice(); deskSave(); }
   function dockHas(app){ return dockList().indexOf(app) > -1; }
@@ -3031,7 +3140,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var phoneMQ = window.matchMedia(PHONE_MQ), phoneSync = function(){
     var on = isPhone(); if(root.classList.contains('phone') === on) return;
     root.classList.toggle('phone', on); ctxClose(true);
-    if(on) Object.keys(WM.wins).forEach(function(k){ if(APPS[k] && APPS[k].sys && WM.wins[k]) close(WM.wins[k]); });
+    if(on) Object.keys(WM.wins).forEach(function(k){ if(APPS[k] && (APPS[k].sys || APPS[k].desk) && WM.wins[k]) close(WM.wins[k]); });
     drender(); updateChrome(); dockFit();
   };
   if(phoneMQ.addEventListener) phoneMQ.addEventListener('change', phoneSync); else if(phoneMQ.addListener) phoneMQ.addListener(phoneSync);
@@ -3241,6 +3350,361 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     sl: function(a, T){ T.art(TRAIN, 'train'); },
     konami: function(a, T){ T.print('up up down down left right left right b a. anywhere on the desktop.'); }
   };
+/* tigOS core app.js, part 27: Jot, notes as text files. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
+  /* ---------------- Jot ----------------
+     A note is a desktop item (kind 'note', 27-desktop.js): an icon on the desktop or in a folder with the same menus, Trash and Get Info
+     as everything else. Its text lives in its own store (localStorage 'tigos.notes' = { user: { id: text } }) so the desktop store stays
+     small enough for the embed's cookie fallback. A note made from the desktop, a folder or Den is saved there at once; New Note inside
+     Jot first asks for a name, a place and a starting template. Typing saves as you go, and a note still called untitled takes its name
+     from its first line. The text never leaves this browser unless Download or Send to Chase takes it, so both are always one click away.
+     The editor writes Markdown the way a word processor behaves (Enter carries a list on, Tab indents it, Cmd+B and Cmd+I wrap the word
+     under the caret, a small format bar for the rest) and Preview sets it. Phones have no Jot. */
+  var NOTE_EXT = /\.(txt|md|markdown|text)$/i;
+  var JOT = { id:null, user:'', prev:false, t:0, pend:null, err:false, warned:false, want:null };
+  /* ---------- the text store ---------- */
+  function NB(user){
+    if(!NB.s){ var s = null; try { s = JSON.parse(localStorage.getItem('tigos.notes') || '{}'); } catch(e){} NB.s = s && typeof s === 'object' && !Array.isArray(s) ? s : {}; }
+    var k = user || USER.name, u = NB.s[k]; if(!u || typeof u !== 'object' || Array.isArray(u)) u = NB.s[k] = {};
+    return u;
+  }
+  function nstoreOk(){ if(nstoreOk.v == null){ try { localStorage.setItem('tigos.nt', '1'); localStorage.removeItem('tigos.nt'); nstoreOk.v = true; } catch(e){ nstoreOk.v = false; } } return nstoreOk.v; }
+  function nsave(){ try { localStorage.setItem('tigos.notes', JSON.stringify(NB.s || {})); return true; } catch(e){ return false; } }
+  function nbody(id, user){ var v = NB(user)[id]; return typeof v === 'string' ? v : ''; }
+  function nbodySet(id, v, user){ NB(user)[id] = String(v || ''); return nsave(); }
+  function nforget(ids){ if(!ids || !ids.length) return; var u = NB(), n = 0; ids.forEach(function(id){ if(id in u){ delete u[id]; n++; } }); if(n) nsave(); }
+  function ncut(s, n){ s = String(s || '').slice(0, n); return /[\ud800-\udbff]$/.test(s) ? s.slice(0, -1) : s; }   /* never split an emoji in two */
+  function nwords(t){ t = String(t || '').trim(); return t ? t.split(/\s+/).length : 0; }
+  /* ---------- names: always with an extension (.txt unless it is .md), never clashing in one place ---------- */
+  function nname(v){ v = String(v || '').replace(/[\/\\:]/g, '-').replace(/\s+/g, ' ').trim(); if(!v || NOTE_EXT.test(v) && !v.replace(NOTE_EXT, '').trim()) v = 'untitled'; if(!NOTE_EXT.test(v)) v = ncut(v, 36).trim()+'.txt'; return ncut(v, 40); }
+  function nsplit(n){ var m = String(n || '').match(NOTE_EXT); return m ? { base:n.slice(0, n.length - m[0].length), ext:m[0] } : { base:n || 'untitled', ext:'.txt' }; }
+  function nnameNew(name, where, skip){ var p = nsplit(nname(name)), n = p.base+p.ext, i = 2; while(!dnameFree(n, where, skip)) n = p.base+' '+(i++)+p.ext; return n; }
+  function ntitleOf(text){ var l = String(text || '').split('\n').map(function(x){ return x.replace(/^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+|>\s*)/, '').replace(/[*_`~#\[\]]/g, '').trim(); }).filter(Boolean)[0] || ''; return ncut(l, 32).trim(); }
+  /* a note by name, for the Terminal (open, cat): "groceries", "groceries.txt" or with quotes */
+  function jnoteNamed(n){ if(isPhone()) return null; n = String(n || '').trim().replace(/^["']+|["']+$/g, '').toLowerCase(); if(!n) return null; return jnotes().filter(function(it){ var l = it.name.toLowerCase(); return l === n || nsplit(l).base === n; })[0] || null; }
+  function jlive(it){ if(!it || it.kind !== 'note' || it.in === 'trash') return false; var f = it.in && ditem(it.in); return !it.in || !!(f && f.in !== 'trash'); }
+  function jnotes(){ var d = DK(); return Object.keys(d.items).map(function(k){ return d.items[k]; }).filter(jlive).sort(function(a, b){ return (b.m || b.t) - (a.m || a.t); }); }
+  function jotLast(){ var l = NB()._last, it = l && ditem(l); if(jlive(it)) return it.id; var all = jnotes(); return all.length ? all[0].id : null; }
+  function jwhen(t){ try { var d = new Date(t), n = new Date(), y = new Date(n.getTime() - 864e5); return d.toDateString() === n.toDateString() ? d.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' }) : d.toDateString() === y.toDateString() ? 'Yesterday' : d.toLocaleDateString('en-US', { month:'short', day:'numeric' }); } catch(e){ return ''; } }
+  /* a desktop cell for a new item at a point (desktop coordinates), the nearest free one if it is taken */
+  function dplace(it, at){ var g = dgrid(), want = g.at(at.x, at.y), taken = {}; Object.keys(DPOS).forEach(function(k){ if(k !== it.id) taken[DPOS[k].c+','+DPOS[k].r] = 1; }); var p = taken[want.c+','+want.r] ? dnear(g, want.c, want.r, taken) : want; it.c = p.c; it.r = p.r; DPOS[it.id] = p; }
+  /* ---------- making notes ---------- */
+  function jotCreate(where, at, text, name){
+    var f = where && ditem(where); where = f && f.kind === 'folder' && f.in !== 'trash' ? where : '';   /* the folder may have gone meanwhile */
+    var it = dnew('note', { name:nnameNew(name || 'untitled.txt', where), in:where, m:Date.now() });
+    if(!name) it.auto = true;   /* named from its first line until someone names it */
+    if(!where && at) dplace(it, at);
+    nbodySet(it.id, text || '');
+    if(!where) delete DK().view.icons;   /* like a new folder, a new note always shows */
+    deskSave(); drender();
+    return it;
+  }
+  /* New Note from the desktop, a folder or Den: saved there at once, then open to write in */
+  function jotNewIn(where, at){ if(isPhone()) return null; var it = jotCreate(where, at); if(!where) dflash(it.id); jotOpen(it.id); jotFocus(); return it; }
+  function jotOpen(id, from){
+    if(isPhone()) return null;
+    var it = id ? ditem(id) : null; if(id && !jlive(it)) return null;
+    var w = WM.wins.jot;
+    if(w){ if(w.min) restore(w); focus(w); if(id) jotLoad(id); return w; }
+    JOT.want = id || null; return open('jot', { from:from });
+  }
+  function jotFocus(end){ setTimeout(function(){ var w = WM.wins.jot, ta = w && $('.jot-text', w.body); if(!ta || ta.offsetParent === null) return; try { ta.focus({ preventScroll:true }); } catch(e){ ta.focus(); } var n = ta.value.length; ta.setSelectionRange(n, n); }, 90); }
+  /* ---------- the window ---------- */
+  var JOT_TPL = [
+    ['blank', 'Blank', function(){ return ''; }],
+    ['todo', 'Checklist', function(){ return '# To-do\n\n- [ ] \n'; }],
+    ['meet', 'Meeting notes', function(){ var d = ''; try { d = new Date().toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' }); } catch(e){} return '# Meeting notes\n\nDate: '+d+'\nWith: \n\n## Notes\n- \n\n## Next steps\n- [ ] \n'; }]
+  ];
+  RENDER.jot = function(w){
+    w.el.classList.add('jot-win');
+    var tb = function(k, icon, label, text){ return '<button type="button" data-jot="'+k+'" aria-label="'+label+'" title="'+label+'">'+ic(icon)+(text ? '<span>'+text+'</span>' : '')+'</button>'; };
+    var fb = function(k, icon, label){ return '<button type="button" data-fmt="'+k+'" aria-label="'+label+'" title="'+label+'">'+ic(icon)+'</button>'; };
+    w.tools.innerHTML = tb('new', 'plus', 'New Note', 'New')+tb('prev', 'eye', 'Preview', 'Preview')+tb('dl', 'download', 'Download a copy')+tb('up', 'upload', 'Open a text file from your computer')+tb('mail', 'mail', 'Send this note to Chase');
+    w.body.innerHTML = '<div class="jotw">'+
+      '<aside class="jot-side"><div class="jot-list" role="listbox" aria-label="Notes"></div><button type="button" class="jot-den">'+ic('den')+'Show in Den</button></aside>'+
+      '<section class="jot-doc">'+
+        '<div class="jot-head"><input class="jot-name" type="text" maxlength="40" spellcheck="false" aria-label="Name"><label class="jot-wl">in <select class="jot-where" aria-label="Where it is saved"></select></label></div>'+
+        '<div class="jot-bar" role="toolbar" aria-label="Format">'+fb('head', 'head', 'Heading')+fb('bold', 'bold', 'Bold (\u2318B)')+fb('italic', 'italic', 'Italic (\u2318I)')+fb('list', 'list', 'Bulleted list')+fb('check', 'check', 'Checklist')+fb('link', 'link', 'Link (\u2318K)')+'</div>'+
+        '<textarea class="jot-text" spellcheck="true" maxlength="100000" aria-label="Note" placeholder="Start writing. Markdown works too: # for a heading, - for a list, - [ ] for a to-do."></textarea>'+
+        '<div class="jot-prev jot-md" hidden></div>'+
+        '<div class="jot-empty" hidden><span class="tile jot">'+ic('jot')+'</span><b>No notes yet</b><p>Write one here, right-click the desktop for New Note, or drop a text file on this window.</p><button type="button" class="jot-go" data-jot="new">New Note</button></div>'+
+        '<div class="jot-foot"><span class="jot-count"></span><span class="jot-state"></span></div>'+
+      '</section>'+
+      '<input class="jot-file" type="file" accept=".txt,.md,.markdown,.text,text/plain,text/markdown" multiple hidden>'+
+    '</div>';
+    var q = function(s){ return $(s, w.body); }, ta = q('.jot-text'), nm = q('.jot-name'), wh = q('.jot-where'), file = q('.jot-file');
+    $$('[data-jot]', w.el).forEach(function(b){ b.addEventListener('click', function(){
+      var k = b.getAttribute('data-jot');
+      if(k === 'new') jotNewAsk();
+      if(k === 'prev'){ JOT.prev = !JOT.prev; jotPrev(); }
+      if(k === 'dl' && JOT.id) jotDownload(JOT.id);
+      if(k === 'mail' && JOT.id) jotMail(JOT.id);
+      if(k === 'up') file.click();
+    }); });
+    $$('[data-fmt]', w.body).forEach(function(b){
+      b.addEventListener('pointerdown', function(e){ e.preventDefault(); });   /* keep the caret in the text */
+      b.addEventListener('click', function(){ var k = b.getAttribute('data-fmt'); if(k === 'bold') jwrap(ta, '**'); else if(k === 'italic') jwrap(ta, '_'); else if(k === 'link') jlink(ta); else jprefix(ta, k); });
+    });
+    file.addEventListener('change', function(){ nimport(file.files, '', null, function(made){ jotLoad(made[made.length - 1].id); }); file.value = ''; });
+    q('.jot-list').addEventListener('click', function(e){ var b = e.target.closest('[data-note]'); if(b && b.getAttribute('data-note') !== JOT.id) jotLoad(b.getAttribute('data-note')); });
+    q('.jot-den').addEventListener('click', function(){ var it = JOT.id && ditem(JOT.id); denOpen(it ? dinside(it) : '', it ? it.id : null); });
+    ta.addEventListener('input', jotDirty);
+    ta.addEventListener('keydown', function(e){ jkeys(ta, e); });
+    var commit = function(){ var it = JOT.id && ditem(JOT.id); if(!it) return; var v = nm.value.replace(/\s+/g, ' ').trim(); if(!v){ nm.value = it.name; return; } v = nname(v); if(v === it.name){ nm.value = v; return; }
+      if(!dnameFree(v, dinside(it), it.id)){ toast('The name \u201c'+v+'\u201d is already taken', 'Please choose a different name.'); nm.value = it.name; return; }
+      it.name = v; delete it.auto; nm.value = v; deskSave(); drender(); winTitles(); };
+    nm.addEventListener('keydown', function(e){ e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); commit(); ta.focus(); } if(e.key === 'Escape'){ var it = ditem(JOT.id); nm.value = it ? it.name : ''; ta.focus(); } });
+    nm.addEventListener('change', commit); nm.addEventListener('blur', commit);
+    wh.addEventListener('change', function(){ var it = JOT.id && ditem(JOT.id); if(!it) return; var to = wh.value; if(to === dinside(it)) return; jotFlush(); if(dmove([it.id], to)){ if(to === '') dshow(); toast('Moved to '+(to ? ditem(to).name : 'the Desktop'), it.name); } });
+    w.destroy = function(){ jotFlush(); var sh = $('.jsheet-bg', w.el); if(sh) sh.remove(); };
+    var want = JOT.want; JOT.want = null;
+    jotLoad(want || jotLast());
+  };
+  function jotLoad(id){
+    var w = WM.wins.jot; if(!w || !$('.jotw', w.body)) return;
+    jotFlush();
+    var it = id ? ditem(id) : null; if(!jlive(it)) it = null;
+    JOT.id = it ? it.id : null; JOT.user = USER.name; JOT.err = false;
+    if(it){ NB()._last = it.id; nsave(); }
+    var q = function(s){ return $(s, w.body); }, ta = q('.jot-text');
+    q('.jot-empty').hidden = !!it;
+    ['.jot-head', '.jot-bar', '.jot-foot'].forEach(function(s){ q(s).hidden = !it; });
+    ta.hidden = !it;
+    if(it){ ta.value = nbody(it.id); ta.scrollTop = 0; q('.jot-name').value = it.name; }
+    $$('[data-jot="dl"], [data-jot="mail"], [data-jot="prev"]', w.tools).forEach(function(b){ b.disabled = !it; });
+    jotWhere(); jotList(); jotTitle(); jotFoot(); jotPrev();
+  }
+  /* any change to the desktop (a rename, a move, the Trash) reaches the open note */
+  function jotSync(){
+    var w = WM.wins.jot; if(!w || !$('.jotw', w.body)) return;
+    if(JOT.user !== USER.name){ jotLoad(jotLast()); return; }
+    var it = JOT.id && ditem(JOT.id);
+    if(JOT.id ? !jlive(it) : jnotes().length){ jotLoad(jotLast()); return; }
+    if(it){ var nm = $('.jot-name', w.body); if(document.activeElement !== nm) nm.value = it.name; }
+    jotWhere(); jotList(); jotTitle();
+  }
+  function jotTitle(){ var w = WM.wins.jot; if(!w) return; var it = JOT.id && ditem(JOT.id), t = $('.win-title', w.el); if(t) t.innerHTML = ic('jot')+esc(it ? it.name : 'Jot'); w.el.setAttribute('aria-label', it ? 'Jot, '+it.name : 'Jot'); }
+  function jotWhere(){
+    var w = WM.wins.jot; if(!w) return; var sel = $('.jot-where', w.body), it = JOT.id && ditem(JOT.id); if(!sel || !it) return;
+    var cur = dinside(it), fs = ditems('').filter(function(x){ return x.kind === 'folder'; }).sort(dcmp('name'));
+    var html = '<option value="">Desktop</option>'+fs.map(function(f){ return '<option value="'+f.id+'">'+esc(f.name)+'</option>'; }).join('');
+    if(sel._h !== html){ sel.innerHTML = html; sel._h = html; }
+    sel.value = cur;
+  }
+  function jotList(){
+    var w = WM.wins.jot; if(!w) return; var box = $('.jot-list', w.body); if(!box) return;
+    var all = jnotes();
+    box.innerHTML = all.length ? all.map(function(it){
+      var t = (it.id === JOT.id && JOT.pend ? JOT.pend.ta.value : nbody(it.id)), lines = t.split('\n').map(function(x){ return x.trim(); }).filter(Boolean), first = ntitleOf(t), peek = lines.slice(1).map(function(x){ return x.replace(/^(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+|>\s*)/, ''); }).join(' ').replace(/[#*_`>\[\]]/g, '').trim() || (first ? '' : 'No text yet');
+      return '<button type="button" class="jot-it'+(it.id === JOT.id ? ' on' : '')+'" role="option" aria-selected="'+(it.id === JOT.id)+'" data-note="'+it.id+'"><b>'+esc(it.name)+'</b><span>'+esc(peek.slice(0, 80))+'</span><em>'+esc(jwhen(it.m || it.t))+' \u00b7 '+esc(dwhere(it))+'</em></button>';
+    }).join('') : '<div class="jot-none">No notes yet</div>';
+  }
+  function jotFoot(){
+    var w = WM.wins.jot; if(!w) return; var ta = $('.jot-text', w.body), c = $('.jot-count', w.body), s = $('.jot-state', w.body); if(!ta || !c) return;
+    var n = nwords(ta.value); c.textContent = (n === 1 ? '1 word' : n+' words');
+    s.textContent = !nstoreOk() ? 'This browser won\u2019t keep notes. Download to keep a copy.' : JOT.err ? 'Not saved: this browser is out of room. Download a copy.' : JOT.pend ? 'Saving\u2026' : 'Saved in this browser \u00b7 Download to keep a copy';
+    s.classList.toggle('bad', !nstoreOk() || JOT.err);
+  }
+  function jotPrev(){
+    var w = WM.wins.jot; if(!w) return; var ta = $('.jot-text', w.body), pv = $('.jot-prev', w.body), bar = $('.jot-bar', w.body), b = $('[data-jot="prev"]', w.tools), on = JOT.prev && !!JOT.id;
+    if(b){ b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.classList.toggle('on', on); }
+    if(!JOT.id) return;
+    ta.hidden = on; pv.hidden = !on; bar.classList.toggle('jb-off', on);
+    if(on){ pv.innerHTML = jmd(ta.value); $$('.jbox', pv).forEach(function(x){ x.addEventListener('click', function(){ jtick(ta, +x.closest('[data-ln]').getAttribute('data-ln')); jotPrev(); }); }); }
+  }
+  /* typing saves after a short pause; closing, switching notes or Cmd+S saves at once */
+  function jotDirty(){ var w = WM.wins.jot; if(!w || !JOT.id) return; clearTimeout(JOT.t); JOT.pend = { id:JOT.id, user:JOT.user, ta:$('.jot-text', w.body) }; JOT.t = setTimeout(jotFlush, 400); jotFoot(); }
+  function jotFlush(){
+    clearTimeout(JOT.t); var p = JOT.pend; JOT.pend = null; if(!p) return;
+    var d = DESKS[p.user], it = d && d.items && d.items[p.id]; if(!it) return;
+    var v = p.ta.value, ok = nbodySet(p.id, v, p.user); it.m = Date.now();
+    if(it.auto){ var t = ntitleOf(v); if(t && p.user === USER.name){ var nn = nnameNew(t, dinside(it), it.id); if(nn !== it.name) it.name = nn; } }
+    deskSave(); JOT.err = !ok;
+    if(!ok && !JOT.warned){ JOT.warned = true; toast('Jot couldn\u2019t save', 'This browser is out of room for notes. Download a copy to keep it.'); }
+    if(p.user === USER.name){ drender(); winTitles(); }
+    jotFoot();
+  }
+  function jotNewAsk(){
+    if(isPhone()) return;
+    var w = WM.wins.jot || open('jot'); if(!w) return; if(w.min) restore(w); focus(w);
+    var old = $('.jsheet-bg', w.el); if(old) old.remove();
+    var cur = JOT.id && ditem(JOT.id), pick = cur ? dinside(cur) : '', tpl = 'blank';
+    if(pick === 'trash') pick = '';
+    var bg = document.createElement('div'); bg.className = 'jsheet-bg';
+    bg.innerHTML = '<div class="jsheet" role="dialog" aria-modal="true" aria-label="New Note"><b>New Note</b>'+
+      '<label class="js-f"><span>Name</span><input class="js-name" type="text" maxlength="40" spellcheck="false" value="untitled.txt"></label>'+
+      '<div class="js-f"><span>Where</span><div class="js-where" role="listbox" aria-label="Where"></div></div>'+
+      '<div class="js-f"><span>Start from</span><div class="js-tpl" role="radiogroup" aria-label="Start from">'+JOT_TPL.map(function(t){ return '<button type="button" role="radio" data-tpl="'+t[0]+'">'+t[1]+'</button>'; }).join('')+'</div></div>'+
+      '<div class="js-row"><button type="button" class="js-nf">'+ic('folder-plus')+'New Folder</button><span class="sp"></span><button type="button" data-no>Cancel</button><button type="button" class="ok" data-ok>Create</button></div></div>';
+    var bar = $('.win-bar', w.el); bg.style.top = (bar ? bar.offsetHeight : 44)+'px';
+    w.el.appendChild(bg);
+    var name = $('.js-name', bg), list = $('.js-where', bg);
+    var drawWhere = function(){
+      var fs = ditems('').filter(function(x){ return x.kind === 'folder'; }).sort(dcmp('name')); if(pick && !fs.some(function(f){ return f.id === pick; })) pick = '';
+      list.innerHTML = [{ id:'', name:'Desktop', i:'wall' }].concat(fs.map(function(f){ return { id:f.id, name:f.name, i:'folder' }; })).map(function(o){ return '<button type="button" role="option" aria-selected="'+(o.id === pick)+'" class="'+(o.id === pick ? 'on' : '')+'" data-w="'+o.id+'">'+ic(o.i)+'<span>'+esc(o.name)+'</span></button>'; }).join('');
+    };
+    var drawTpl = function(){ $$('[data-tpl]', bg).forEach(function(b){ var on = b.getAttribute('data-tpl') === tpl; b.classList.toggle('on', on); b.setAttribute('aria-checked', on ? 'true' : 'false'); }); };
+    drawWhere(); drawTpl();
+    var done = function(){ bg.classList.add('out'); setTimeout(function(){ bg.remove(); }, 160); };
+    var make = function(){
+      var v = name.value.replace(/\s+/g, ' ').trim(), named = v && nname(v) !== 'untitled.txt';
+      var t = JOT_TPL.filter(function(x){ return x[0] === tpl; })[0], it = jotCreate(pick, null, t ? t[2]() : '', named ? v : null); pick = it.in || '';
+      done(); jotLoad(it.id); if(JOT.prev){ JOT.prev = false; jotPrev(); } jotFocus();
+      toast(it.name+' saved', 'In '+(pick ? ditem(pick).name : 'the Desktop')+'. It saves as you type.');
+    };
+    list.addEventListener('click', function(e){ var b = e.target.closest('[data-w]'); if(!b) return; pick = b.getAttribute('data-w'); drawWhere(); });
+    list.addEventListener('dblclick', function(e){ if(e.target.closest('[data-w]')) make(); });
+    $('.js-tpl', bg).addEventListener('click', function(e){ var b = e.target.closest('[data-tpl]'); if(!b) return; tpl = b.getAttribute('data-tpl'); drawTpl(); });
+    $('.js-nf', bg).addEventListener('click', function(){   /* a new folder, named right here, then picked */
+      var b = this, inp = document.createElement('input'); inp.className = 'js-nfin'; inp.type = 'text'; inp.maxLength = 40; inp.placeholder = 'Folder name'; inp.setAttribute('aria-label', 'Folder name'); b.replaceWith(inp); inp.focus();
+      var gone = false, fin = function(keep){ if(gone || !inp.isConnected) return; gone = true; var v = inp.value.replace(/\s+/g, ' ').trim().slice(0, 40); inp.replaceWith(b);   /* removing the field blurs it: once only */ if(!keep) return; var f = dnew('folder', { name:dnameNew(v || 'untitled folder', '') }); delete DK().view.icons; deskSave(); drender(); pick = f.id; drawWhere(); name.focus(); };
+      inp.addEventListener('keydown', function(e){ e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); fin(true); } if(e.key === 'Escape'){ e.preventDefault(); fin(false); name.focus(); } });
+      inp.addEventListener('blur', function(){ fin(!!inp.value.trim()); });
+    });
+    $('[data-no]', bg).addEventListener('click', done);
+    $('[data-ok]', bg).addEventListener('click', make);
+    bg.addEventListener('keydown', function(e){ if(e.target.classList.contains('js-nfin')) return; e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); done(); } if(e.key === 'Enter' && !e.target.closest('[data-no], .js-nf, [data-tpl]')){ e.preventDefault(); make(); } });
+    bg.addEventListener('pointerdown', function(e){ if(e.target === bg){ e.preventDefault(); var s = $('.jsheet', bg); s.classList.remove('nope'); void s.offsetWidth; s.classList.add('nope'); } });
+    setTimeout(function(){ name.focus(); name.setSelectionRange(0, nsplit(name.value).base.length); }, 30);
+  }
+  /* ---------- out of the browser: download a copy, email it to Chase ---------- */
+  function jotDownload(id){
+    var it = ditem(id); if(!it) return; if(JOT.id === id) jotFlush();
+    var md = /\.(md|markdown)$/i.test(it.name), b = new Blob([nbody(id)], { type:(md ? 'text/markdown' : 'text/plain')+';charset=utf-8' }), u = URL.createObjectURL(b), a = document.createElement('a');
+    a.href = u; a.download = it.name; a.rel = 'noopener'; root.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(u); }, 4000);
+    toast('Downloading '+it.name, 'A copy to keep outside this browser.');
+  }
+  function jotMail(id){
+    var it = ditem(id); if(!it) return; if(JOT.id === id) jotFlush();
+    var C = TIG.contact, full = nbody(id), long = full.length > 1800, body = long ? ncut(full, 1800).replace(/\s+\S*$/, '')+'\n\n[The rest of this note is on my clipboard.]' : full;
+    if(long){ try { navigator.clipboard.writeText(full).catch(function(){}); } catch(e){} }
+    var a = document.createElement('a'); a.href = 'mailto:'+C.email+'?subject='+encodeURIComponent('A note for Chase: '+nsplit(it.name).base)+'&body='+encodeURIComponent(body); root.appendChild(a); a.click(); a.remove();
+    toast('Opening your email app', long ? 'The note is long, so the full text is on your clipboard to paste in.' : 'Addressed to '+C.email+'.');
+  }
+  function noteActions(id){ return [{ t:'Download a Copy', i:'download', fn:function(){ jotDownload(id); } }, { t:'Send to Chase', i:'mail', fn:function(){ jotMail(id); } }]; }
+  /* ---------- in from the computer: drop text files on the desktop, a folder, Den or Jot, or use Open in Jot ---------- */
+  function nimport(files, where, at, then){
+    var list = Array.prototype.slice.call(files || []), made = [], skip = 0, big = 0, done = 0, n = Math.min(list.length, 12);
+    if(!n) return;
+    var fin = function(){ if(++done < n) return;
+      var place = made.length && made[0].in ? ditem(made[0].in).name : 'the Desktop', extra = (skip ? ' Jot opens text files (.txt, .md); '+skip+' skipped.' : '')+(big ? ' '+big+' over 256 KB left out.' : '');
+      if(made.length) toast(made.length === 1 ? made[0].name+' added to '+place : made.length+' notes added to '+place, (made.length === 1 ? 'Double-click it to open.' : '')+extra);
+      else toast('Nothing added', extra.trim() || 'Jot opens text files (.txt, .md).');
+      if(made.length && then) then(made);
+    };
+    list.slice(0, n).forEach(function(f){
+      if(!(NOTE_EXT.test(f.name) || /^text\/(plain|markdown|x-markdown)$/.test(f.type))){ skip++; fin(); return; }
+      if(f.size > 262144){ big++; fin(); return; }
+      var rd = f.text ? f.text() : new Promise(function(res, rej){ var r = new FileReader(); r.onload = function(){ res(String(r.result)); }; r.onerror = rej; r.readAsText(f); });
+      rd.then(function(t){ made.push(jotCreate(where, at, String(t).replace(/\r\n?/g, '\n').slice(0, 100000), f.name)); fin(); }, function(){ skip++; fin(); });
+    });
+  }
+  var FILE_HI = null;
+  function fileHi(el){ if(FILE_HI === el) return; if(FILE_HI) FILE_HI.classList.remove('file-on'); FILE_HI = el; if(el) el.classList.add('file-on'); }
+  function fileTarget(t){
+    if(isPhone() || !t || !t.closest || t.closest('.dlg-bg, .jsheet-bg, #login, #sleep')) return null;
+    var w = t.closest('.win');
+    if(w){ var id = w.dataset.app, a = APPS[id] || {};
+      if(id === 'jot') return { where:'', open:true, el:w };
+      if(id === 'den'){ var D = DEN.loc; return D === '' || D === '*notes' ? { where:'', el:w } : D !== 'trash' && D !== '*apps' && denOk(D) ? { where:D, el:w } : null; }
+      if(a.sys === 'folder') return { where:a.folder, el:w };
+      return null; }
+    var fi = t.closest('#dicons .dicon[data-kind="folder"]'); if(fi) return { where:fi.getAttribute('data-id'), el:fi };
+    if(t.closest('#desktop')) return { where:'', at:true, el:desk };
+    return null;
+  }
+  var hasFiles = function(e){ var t = e.dataTransfer && e.dataTransfer.types; return !!t && Array.prototype.indexOf.call(t, 'Files') > -1; };
+  root.addEventListener('dragover', function(e){ if(!hasFiles(e)) return; e.preventDefault(); var tg = fileTarget(e.target); e.dataTransfer.dropEffect = tg ? 'copy' : 'none'; fileHi(tg ? tg.el : null); });   /* never let the browser leave the site to show a dropped file */
+  root.addEventListener('dragleave', function(e){ if(!e.relatedTarget || !root.contains(e.relatedTarget)) fileHi(null); });
+  root.addEventListener('drop', function(e){
+    if(!hasFiles(e)) return; e.preventDefault(); fileHi(null);
+    var tg = fileTarget(e.target); if(!tg){ if(!isPhone()) toast('Drop text files on the desktop', 'Or on a folder, Den or Jot.'); return; }
+    var rr = root.getBoundingClientRect(), at = tg.at && !isMobile() ? deskXY(e.clientX - rr.left, e.clientY - rr.top) : null;
+    nimport(e.dataTransfer.files, tg.where, at, function(made){ if(tg.open) jotOpen(made[made.length - 1].id); else if(!tg.where) dflash(made[made.length - 1].id); });
+  });
+  window.addEventListener('pagehide', function(){ jotFlush(); });   /* closing or reloading the tab inside the pause still saves */
+  document.addEventListener('visibilitychange', function(){ if(document.hidden) jotFlush(); });
+  window.addEventListener('storage', function(e){ if(e.key !== 'tigos.notes') return; NB.s = null; jotSync(); });   /* another tab wrote notes: read them again before this one writes */
+  document.addEventListener('keydown', function(e){   /* Cmd+S in Jot saves now instead of saving the web page */
+    if(!(e.metaKey || e.ctrlKey) || e.shiftKey || (e.key !== 's' && e.key !== 'S')) return;
+    var w = WM.wins.jot; if(!w || w.min || !w.el.classList.contains('focus')) return;
+    e.preventDefault(); jotFlush(); var s = $('.jot-state', w.body); if(s){ s.classList.remove('flash'); void s.offsetWidth; s.classList.add('flash'); }
+  });
+  /* ---------- the editor: Markdown that behaves like a word processor ---------- */
+  function jput(ta, s, e, str, s2, e2){   /* replace a range so Cmd+Z can undo it */
+    ta.focus(); ta.setSelectionRange(s, e); var ok = false;
+    try { ok = document.execCommand('insertText', false, str); } catch(x){}
+    if(!ok || ta.value.slice(s, s + str.length) !== str){ ta.setRangeText(str, s, e, 'end'); ta.dispatchEvent(new Event('input', { bubbles:true })); }
+    ta.setSelectionRange(s2, e2 == null ? s2 : e2);
+  }
+  function jwrap(ta, mk){
+    var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, L = mk.length;
+    if(s === e){ var a = s, b = s; while(a > 0 && /[\w'\u2019-]/.test(v[a - 1])) a--; while(b < v.length && /[\w'\u2019-]/.test(v[b])) b++; s = a; e = b; }   /* no selection: the word under the caret */
+    var inner = v.slice(s, e);
+    if(v.slice(s - L, s) === mk && v.slice(e, e + L) === mk){ jput(ta, s - L, e + L, inner, s - L, e - L); return; }   /* already wrapped: unwrap */
+    if(inner.length > 2*L && inner.slice(0, L) === mk && inner.slice(-L) === mk){ jput(ta, s, e, inner.slice(L, -L), s, e - 2*L); return; }
+    jput(ta, s, e, mk + inner + mk, s + L, e + L);
+  }
+  function jlink(ta){ var s = ta.selectionStart, e = ta.selectionEnd, t = ta.value.slice(s, e) || 'link', str = '['+t+'](https://)'; jput(ta, s, e, str, s + t.length + 3, s + str.length - 1); }
+  function jprefix(ta, kind){
+    var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, a = v.lastIndexOf('\n', s - 1) + 1, b = v.indexOf('\n', e); if(b < 0) b = v.length;
+    var lines = v.slice(a, b).split('\n'), has = { head:/^#{1,6}\s/, list:/^\s*[-*+]\s+(?!\[[ xX]\]\s)/, check:/^\s*[-*+]\s+\[[ xX]\]\s/ }[kind], add = { head:'# ', list:'- ', check:'- [ ] ' }[kind];
+    var used = lines.filter(function(l){ return l.trim(); }), all = used.length > 0 && used.every(function(l){ return has.test(l); });
+    var out = lines.map(function(l){ if(!l.trim() && lines.length > 1) return l; var m = l.match(/^(\s*)(?:#{1,6}\s+|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)?(.*)$/); if(all) return m[1] + m[2]; return kind === 'head' ? add + m[2] : m[1] + add + m[2]; }).join('\n');
+    jput(ta, a, b, out, a + out.length);
+  }
+  function jtick(ta, ln){ var L = ta.value.split('\n'); if(!(ln >= 0 && ln < L.length)) return; var l = L[ln], m = l.match(/^(\s*[-*+]\s+\[)([ xX])(\]\s)/); if(!m) return; var at = L.slice(0, ln).join('\n').length + (ln ? 1 : 0) + m[1].length; jput(ta, at, at + 1, m[2] === ' ' ? 'x' : ' ', at + 1); }
+  function jkeys(ta, e){
+    var meta = e.metaKey || e.ctrlKey, k = (e.key || '').toLowerCase();
+    if(meta && !e.shiftKey && !e.altKey){ if(k === 'b'){ e.preventDefault(); jwrap(ta, '**'); return; } if(k === 'i'){ e.preventDefault(); jwrap(ta, '_'); return; } if(k === 'k'){ e.preventDefault(); e.stopPropagation(); jlink(ta); return; } }
+    if(e.key === 'Enter' && !e.shiftKey && !meta && !e.altKey && !e.isComposing){   /* Enter carries a list on; Enter on an empty item ends it */
+      var v = ta.value, s = ta.selectionStart; if(s !== ta.selectionEnd) return;
+      var a = v.lastIndexOf('\n', s - 1) + 1, z = v.indexOf('\n', s); if(z < 0) z = v.length;
+      var line = v.slice(a, s), m = line.match(/^(\s*)([-*+]\s+\[[ xX]\]\s+|[-*+]\s+|(\d+)([.)])\s+|>\s?)/); if(!m) return;
+      e.preventDefault();
+      if(line.length === m[0].length && !v.slice(s, z).trim()){ jput(ta, a, z, '', a); return; }
+      var mk = m[3] ? (+m[3] + 1) + m[4] + ' ' : m[2].replace(/\[[xX]\]/, '[ ]');
+      jput(ta, s, s, '\n' + m[1] + mk, s + 1 + m[1].length + mk.length); return;
+    }
+    if(e.key === 'Tab' && !meta && !e.altKey){   /* Tab indents a list item, Shift+Tab brings it back; anywhere else Tab leaves the text, as it should */
+      var v2 = ta.value, s2 = ta.selectionStart, e2 = ta.selectionEnd, a2 = v2.lastIndexOf('\n', s2 - 1) + 1, b2 = v2.indexOf('\n', e2); if(b2 < 0) b2 = v2.length;
+      var ls = v2.slice(a2, b2).split('\n'), items = ls.filter(function(l){ return l.trim(); });
+      if(!items.length || !items.every(function(l){ return /^\s*([-*+]|\d+[.)])\s/.test(l); })) return;
+      e.preventDefault();
+      var out = ls.map(function(l){ return !l.trim() ? l : e.shiftKey ? l.replace(/^ {1,2}/, '') : '  ' + l; }).join('\n'), d = out.length - (b2 - a2);
+      if(ls.length === 1) jput(ta, a2, b2, out, Math.max(a2, s2 + d)); else jput(ta, a2, b2, out, a2, a2 + out.length);
+    }
+  }
+  /* ---------- Preview: a small, safe Markdown (everything is escaped first; links only to http, https or mailto) ---------- */
+  function jinline(s){
+    var keep = [], stash = function(h){ keep.push(h); return '\u0001'+(keep.length - 1)+'\u0002'; };
+    s = s.replace(/`([^`]+)`/g, function(_, c){ return stash('<code>'+c+'</code>'); });
+    s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, function(_, t, u){ return stash('<a href="'+u+'" target="_blank" rel="noopener noreferrer">'+t+'</a>'); });
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<em>$2</em>').replace(/(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g, '$1<em>$2</em>');
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    return s.replace(/\u0001(\d+)\u0002/g, function(_, i){ return keep[+i]; });
+  }
+  function jmd(src){
+    var L = String(src || '').replace(/\r\n?/g, '\n').split('\n'), out = [], para = [], list = null, m;
+    var flush = function(){ if(para.length){ out.push('<p>'+para.map(function(x){ return jinline(esc(x)); }).join('<br>')+'</p>'); para = []; } };
+    var open = function(tag, start){ if(list !== tag){ end(); out.push('<'+tag+(start > 1 ? ' start="'+start+'"' : '')+'>'); list = tag; } };
+    var end = function(){ if(list){ out.push('</'+list+'>'); list = null; } };
+    var ind = function(sp){ return ' style="--ind:'+Math.min(6, Math.floor(sp.replace(/\t/g, '  ').length / 2))+'"'; };
+    for(var i = 0; i < L.length; i++){
+      var raw = L[i];
+      if(/^\s*```/.test(raw)){ flush(); end(); var code = []; i++; while(i < L.length && !/^\s*```/.test(L[i])){ code.push(esc(L[i])); i++; } out.push('<pre><code>'+code.join('\n')+'</code></pre>'); continue; }
+      if(!raw.trim()){ flush(); end(); continue; }
+      if((m = raw.match(/^(#{1,3})\s+(.*)$/))){ flush(); end(); out.push('<h'+m[1].length+'>'+jinline(esc(m[2]))+'</h'+m[1].length+'>'); continue; }
+      if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(raw)){ flush(); end(); out.push('<hr>'); continue; }
+      if((m = raw.match(/^>\s?(.*)$/))){ flush(); end(); out.push('<blockquote>'+jinline(esc(m[1]))+'</blockquote>'); continue; }
+      if((m = raw.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/))){ flush(); open('ul'); var on = m[2] !== ' '; out.push('<li class="jt'+(on ? ' on' : '')+'" data-ln="'+i+'"'+ind(m[1])+'><button type="button" class="jbox" role="checkbox" aria-checked="'+on+'" aria-label="'+(on ? 'Done' : 'To do')+'"></button><span>'+jinline(esc(m[3]))+'</span></li>'); continue; }
+      if((m = raw.match(/^(\s*)[-*+]\s+(.*)$/))){ flush(); open('ul'); out.push('<li'+ind(m[1])+'>'+jinline(esc(m[2]))+'</li>'); continue; }
+      if((m = raw.match(/^(\s*)(\d+)[.)]\s+(.*)$/))){ flush(); open('ol', +m[2]); out.push('<li'+ind(m[1])+'>'+jinline(esc(m[3]))+'</li>'); continue; }
+      end(); para.push(raw);
+    }
+    flush(); end();
+    return out.join('') || '<p class="jot-none">Nothing to preview yet.</p>';
+  }
 /* tigOS core app.js, part 27: menus. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- what each right-click offers ----------------
      One builder per kind of target (27-ctx-menu.js ctxTarget names them). Each returns { items, anchor, src } for ctxShow: items read
@@ -3266,15 +3730,17 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   /* ---------- desktop items: the actions behind the menus ---------- */
   function ddelete(ids){
     var d = DK(), n = 0;
-    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; Object.keys(d.items).forEach(function(k){ if(d.items[k].in === id) delete d.items[k]; }); var fw = WM.wins['fold-'+id]; if(fw) close(fw); delete d.items[id]; n++; });
-    if(n){ deskSave(); drender(); }
+    var bodies = [];   /* a note's text goes with it */
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; Object.keys(d.items).forEach(function(k){ if(d.items[k].in === id){ if(d.items[k].kind === 'note') bodies.push(k); delete d.items[k]; } }); var fw = WM.wins['fold-'+id]; if(fw) close(fw); if(it.kind === 'note') bodies.push(id); delete d.items[id]; n++; });
+    if(n){ nforget(bodies); deskSave(); drender(); }
     return n;
   }
   function dduplicate(ids){
-    var last = null;
+    var last = null; jotFlush();   /* a copy carries what was just typed */
     ids.forEach(function(id){ var it = ditem(id); if(!it || it.in === 'trash') return; var where = dinside(it);
-      var n = dnew(it.kind, { app:it.app, name:dnameNew(it.name+' copy', where), in:where, tag:it.tag });
-      if(it.kind === 'folder') dkids(id).forEach(function(k){ dnew('app', { app:k.app, name:k.name, in:n.id, tag:k.tag, t:k.t }); });
+      var cp = function(x, nm, inn, t){ var y = dnew(x.kind === 'note' ? 'note' : 'app', { app:x.app, name:nm, in:inn, tag:x.tag, t:t || Date.now() }); if(x.kind === 'note'){ y.m = Date.now(); nbodySet(y.id, nbody(x.id)); } return y; };   /* a note's copy carries its text */
+      var n = it.kind === 'folder' ? dnew('folder', { name:dnameNew(it.name+' copy', where), in:where, tag:it.tag }) : cp(it, it.kind === 'note' ? nnameNew(nsplit(it.name).base+' copy'+nsplit(it.name).ext, where) : dnameNew(it.name+' copy', where), where);
+      if(it.kind === 'folder') dkids(id).forEach(function(k){ cp(k, k.name, n.id, k.t); });
       last = n; });
     if(!last) return; deskSave(); drender(); if(!last.in) dflash(last.id);
   }
@@ -3352,6 +3818,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(app === 'terminal') out.push({ t:'Run', i:'terminal', sub:function(){ return [['help', 'Every command'], ['neofetch', 'System info'], ['whoami', ''], ['weather', ''], ['fortune', '']].map(function(c){ return { t:c[0], note:c[1], fn:function(){ termRun(c[0]); } }; }); } });
     if(app === 'games' && GAMES.length) out.push({ t:'Play', i:'gamepad', sub:function(){ return GAMES.map(function(g){ return { t:g.name, fn:function(){ open('games', { route:g.id }); } }; }); } });
     if(app === 'pets' && Object.keys(PETS).length) out.push({ t:'Desktop Pet', i:'paw', sub:petSub });
+    if(app === 'jot') out.push({ t:'New Note', i:'plus', fn:function(){ jotNewAsk(); } }, { t:'Recent Notes', i:'jot', sub:function(){ var l = jnotes().slice(0, 8); return l.length ? l.map(function(it){ return { t:it.name, note:dwhere(it), fn:function(){ jotOpen(it.id); } }; }) : [{ t:'No notes yet', dis:true }]; } });
+    if(app === 'den') out.push({ t:'Go to', i:'den', sub:function(){ return [['', 'Desktop'], ['*notes', 'Notes'], ['*apps', 'Applications'], ['trash', 'Trash']].map(function(p){ return { t:p[1], fn:function(){ denOpen(p[0]); } }; }); } });
     if(app === 'settings') out.push({ t:'Appearance', i:'sun', sub:function(){ return seg3(PREF.theme === 'light' ? 'light' : 'dark', function(v){ setPref('theme', v); }, [['dark', 'Dark'], ['light', 'Light']]); } });
     return out;
   }
@@ -3366,6 +3834,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(isPhone()) return { items:[wall, pet, '-', saver, sets] };   /* a phone's home screen: the look of it, and nothing that needs files or a Trash */
     return { items:[
       { t:'New Folder', i:'folder-plus', fn:function(){ dnewFolder(mob ? null : at); } },
+      { t:'New Note', i:'jot', fn:function(){ jotNewIn('', mob ? null : at); } },
       '-',
       { t:'Get Info', i:'info', k:mob ? '' : '\u2318I', fn:function(){ infoShow({ type:'desk' }); } },
       '-',
@@ -3382,7 +3851,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       icons && (hero ? { t:'Hide Welcome Text', i:'eye-off', fn:function(){ dviewSet('hero', false); toast('Welcome text hidden', hideTip); } }
                      : { t:'Show Welcome Text', i:'eye', fn:function(){ dviewSet('hero', true); } }),
       '-',
-      { t:'Add to Desktop', i:'plus', sub:function(){ return VIS().map(function(app){ return { t:APPS[app].title, i:APPS[app].icon, on:!!dalias(app), fn:function(){ daddApp(app); } }; }); } },
+      { t:'Add to Desktop', i:'plus', sub:function(){ return VIS().concat(isPhone() ? [] : ['jot', 'den']).map(function(app){ return { t:APPS[app].title, i:APPS[app].icon, on:!!dalias(app), fn:function(){ daddApp(app); } }; }); } },
       '-',
       saver,
       sets
@@ -3403,7 +3872,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       '-',
       { t:'Empty Trash\u2026', i:'trash', fn:demptyAsk }
     ] };
-    var app = !many && it.kind === 'app' ? it.app : '', acts = app ? appActions(app) : [], moves = moveSub(ids, here), tagNow = its.every(function(x){ return x.tag === it.tag; }) ? it.tag : null;
+    var app = !many && it.kind === 'app' ? it.app : '', acts = app ? appActions(app) : !many && it.kind === 'note' ? noteActions(id) : [], moves = moveSub(ids, here), tagNow = its.every(function(x){ return x.tag === it.tag; }) ? it.tag : null;
     return { items:[
       { t:many ? 'Open '+its.length+' Items' : 'Open', i:it.kind === 'folder' ? 'folder' : 'open', k:mob ? '' : '\u2318\u2193', fn:function(){ (mob ? ids.slice(0, 1) : ids).forEach(function(i){ dopen(i, $('.dicon[data-id="'+i+'"]', host)); }); } },
       acts.length && { t:'Quick Actions', i:'skills', sub:acts },
@@ -3434,8 +3903,17 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       '-',
       { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'trash' }); } }
     ] };
+    if(fid === '' || fid === '*notes') return { items:[   /* Den showing the Desktop or every note */
+      fid === '' && { t:'New Folder', i:'folder-plus', fn:function(){ dnewFolder(null); } },
+      { t:'New Note', i:'jot', fn:function(){ jotNewIn(''); } },
+      '-',
+      { t:'Select All', k:isMobile() ? '' : '\u2318A', dis:!$$('.dicon', fw).length, fn:sel },
+      '-',
+      { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'desk' }); } }
+    ] };
     var it = ditem(fid); if(!it) return null;
     return { items:[
+      { t:'New Note', i:'jot', fn:function(){ jotNewIn(fid); } },
       { t:'Add to Folder', i:'plus', sub:function(){ return VIS().map(function(app){ var has = dkids(fid).some(function(k){ return k.app === app; }); return { t:APPS[app].title, i:APPS[app].icon, on:has, fn:function(){ if(has) return; dnew('app', { app:app, name:dnameNew(APPS[app].title, fid), in:fid }); deskSave(); drender(); } }; }); } },
       { t:'Select All', k:isMobile() ? '' : '\u2318A', dis:!dkids(fid).length, fn:sel },
       '-',
@@ -3471,6 +3949,19 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(w) items.push(w.min ? { t:'Show', fn:function(){ restore(w); focus(w); } } : { t:'Hide', fn:function(){ minimize(w); } }, { t:'Quit', fn:function(){ close(w); } });
     else items.push({ t:'Open', fn:function(){ open(app, { from:b }); } });
     return { items:items, anchor:b, src:b };
+  };
+  CTX_MENUS.denapp = function(tg){
+    var app = tg.el.getAttribute('data-app'), a = APPS[app]; if(!a || isPhone()) return null;
+    $$('.den-app.sel').forEach(function(e){ e.classList.remove('sel'); }); tg.el.classList.add('sel');
+    var acts = appActions(app);
+    return { items:[
+      { t:'Open', i:'open', fn:function(){ open(app, { from:tg.el }); } },
+      acts.length && { t:'Quick Actions', i:'skills', sub:acts },
+      '-',
+      { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'app', app:app }); } },
+      { t:dalias(app) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:function(){ daddApp(app); } },
+      dockHas(app) ? { t:'Show in Dock', i:'dock', fn:function(){ dockBounce(app); } } : { t:'Add to Dock', i:'dock', fn:function(){ dockPin(app); } }
+    ] };
   };
   CTX_MENUS.trash = function(tg){
     if(isPhone()) return null;

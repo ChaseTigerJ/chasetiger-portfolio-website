@@ -1584,6 +1584,8 @@ html, body { margin:0 !important; padding:0 !important; height:100%; overflow:hi
 /* a phone keeps tigOS simple: no Terminal (the logo menu and Spotlight still open it) and no Trash, so nothing that needs one. Upright,
    its dock is a plain row of apps, like iOS: no dividers and no running-app icons (a window there has its own Done button) */
 .phone .dock .dk.trash, .phone .dock .dk[data-dock="terminal"] { display:none; }
+.phone #tgMenu [data-open="terminal"] { display:none; }   /* a phone has no Terminal anywhere */
+.phone .dock .dk.denfix, .phone .dock .sep.densep { display:none; }   /* nor Den */
 @media (max-width:760px) { .phone .dock .sep, .phone .dock .dk.tmp { display:none; } }
 .dk.dk-away { display:none; }
 .dk.dk-in { animation:dkIn .38s var(--spring) both; }
@@ -1625,8 +1627,11 @@ html, body { margin:0 !important; padding:0 !important; height:100%; overflow:hi
 .u-ariel .dicon.sel .dlab, .u-greggyd .dicon.sel .dlab { color:#fff; }
 .dicon .dren { width:calc(var(--dcw, 98px) - 8px); padding:1px 4px; border:0; border-radius:4px; outline:2px solid var(--accent); background:#fff; color:#111; font:inherit; font-size:12px; font-weight:600; text-align:center; text-shadow:none; user-select:text; -webkit-user-select:text; }
 .dicon.dragging { opacity:.35; }
-.dicon.new { animation:diconIn .38s var(--spring) both; }
-@keyframes diconIn { from { opacity:0; transform:scale(.6); } }
+.dicon.new { animation:diconIn .52s var(--ease) both; }   /* a new icon blows in like a bubble: up past its size, a little settle, home */
+@keyframes diconIn { 0% { opacity:0; transform:scale(.4); } 55% { opacity:1; transform:scale(1.08); } 78% { transform:scale(.97); } 100% { opacity:1; transform:scale(1); } }
+.dicon.bye { pointer-events:none; animation:diconBye .34s var(--ease) both; }   /* and one that leaves swells a touch, then pops */
+@keyframes diconBye { 0% { opacity:1; transform:scale(1); } 35% { opacity:1; transform:scale(1.08); filter:blur(0); } 100% { opacity:0; transform:scale(.3); filter:blur(2px); } }
+.fw.fw-bye { position:absolute; inset:0; display:block; min-height:0; z-index:5; pointer-events:none; background:none; }
 .dicon.flash .dart { animation:diconFlash .7s ease; }
 @keyframes diconFlash { 25% { transform:scale(1.14); } 50% { transform:scale(.96); } 75% { transform:scale(1.05); } }
 .dghost { position:absolute; inset:0; z-index:94; pointer-events:none; }
@@ -1695,7 +1700,8 @@ html, body { margin:0 !important; padding:0 !important; height:100%; overflow:hi
   .light .dlg { background:rgba(255,255,255,.98); }
   .fw-grid { grid-template-columns:repeat(auto-fill, minmax(84px, 1fr)); --di:50px; }
 }
-.rm .menu.ctx, .rm .dicon, .rm .dicon.new, .rm .dlg, .rm .dlg-bg { animation:none; transition:none; }
+.rm .menu.ctx, .rm .dicon, .rm .dicon.new, .rm .dicon.bye, .rm .dlg, .rm .dlg-bg { animation:none; transition:none; }
+.rm .fw-bye { display:none; }
 /* tigOS styles.css, part 42: Jot (notes) and Den (files). The parts in this folder are concatenated in name order by build.py, so they share one scope. */
 /* ---------- the two tiles, and a note's page icon ---------- */
 .tile.jot { background:linear-gradient(145deg,#ffe58f,#f5b301); }
@@ -1845,7 +1851,23 @@ html, body { margin:0 !important; padding:0 !important; height:100%; overflow:hi
 .u-ariel .den-app.sel > span, .u-greggyd .den-app.sel > span { color:#fff; }
 .den-app:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 
+/* the Trash, as a place in Den: a header with its can, what is in it and Empty */
+.den-trh { flex:none; display:flex; align-items:center; gap:12px; margin:12px 14px 0; padding:10px 12px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid var(--line); }
+.den-trh .tile { flex:none; width:38px; height:38px; border-radius:11px; display:grid; place-items:center; }
+.den-trh .tile svg { width:20px; height:20px; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round; }
+.den-trt { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.den-trt b { font-size:14px; font-weight:650; color:var(--ink); }
+.den-trt span { font-size:12px; color:var(--faint); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.den-trh [data-den="empty"] { flex:none; padding:6px 14px; border-radius:8px; font-size:12.5px; font-weight:600; color:var(--ink); background:rgba(255,255,255,.08); border:1px solid var(--line2); transition:background .12s, transform .12s var(--spring); }
+.den-trh [data-den="empty"]:hover:not(:disabled) { background:rgba(255,255,255,.14); }
+.den-trh [data-den="empty"]:active:not(:disabled) { transform:scale(.96); }
+.den-trh [data-den="empty"]:disabled { opacity:.4; cursor:default; }
+.den-main { position:relative; }
+
 /* ---------- light appearance ---------- */
+.light .den-trh { background:rgba(0,0,0,.03); }
+.light .den-trh [data-den="empty"] { background:#fff; }
+.light .den-trh [data-den="empty"]:hover:not(:disabled) { background:rgba(0,0,0,.05); }
 .light .jot-side, .light .den-side { background:rgba(0,0,0,.025); }
 .light .jot-it:hover, .light .den-side button:hover, .light .jot-den:hover, .light .jot-bar button:hover, .light .js-where button:hover { background:rgba(0,0,0,.05); }
 .light .den-side button.on, .light .den-app.sel { background:rgba(0,0,0,.08); }

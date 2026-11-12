@@ -332,7 +332,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var $$ = function(s, c){ return Array.prototype.slice.call((c||root).querySelectorAll(s)); };
   var isMobile = function(){ return window.matchMedia('(max-width:760px)').matches; };
   /* isMobile is the layout (full-screen windows, the bottom dock). isPhone is the device: a phone held either way, or a window as narrow as one.
-     A phone keeps tigOS simple: no Terminal or Trash in the dock, no desktop icons or folders, short menus. A tablet in the same
+     A phone keeps tigOS simple: no Terminal at all, no Trash in the dock, no desktop icons or folders, short menus. A tablet in the same
      layout (an iPad mini upright is 744 px) keeps all of it */
   var PHONE_MQ = '(max-width:540px), (pointer:coarse) and (max-height:540px)';
   var isPhone = function(){ return window.matchMedia(PHONE_MQ).matches; };
@@ -352,15 +352,15 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     resume:     { title:'Resume',       icon:'resume',     tile:'resume',     w:980, h:720 },
     skills:     { title:'Skills',       icon:'skills',     tile:'skills',     w:820, h:640 },
     contact:    { title:'Contact',      icon:'contact',    tile:'contact',    w:720, h:620 },
-    terminal:   { title:'Terminal',     icon:'terminal',   tile:'terminal',   w:760, h:480 },
+    terminal:   { title:'Terminal',     icon:'terminal',   tile:'terminal',   w:760, h:480, desk:true },   /* a desk app too: a phone has no Terminal anywhere (dock, menus, Spotlight) */
     settings:   { title:'Settings',     icon:'gear',       tile:'settings',   w:640, h:600 },
     games:      { title:'Arcade',       icon:'gamepad',    tile:'games',      w:900, h:680, hidden:true },   /* hidden apps: no dock, no default Spotlight list, no ls. The terminal (`game`, `pets`) or a Spotlight search by name opens them */
     pets:       { title:'Pets',         icon:'paw',        tile:'paw',       w:820, h:620, hidden:true },
-    /* desk apps: files live on a desktop, so a desktop or a tablet only (a phone has none). Hidden too: Spotlight, the right-click menus and the terminal find them */
+    /* desk apps: files live on a desktop, so a desktop or a tablet only (a phone has none). Jot and Den are hidden too: Spotlight, the right-click menus and the terminal find them */
     jot:        { title:'Jot',          icon:'jot',        tile:'jot',        w:860, h:580, hidden:true, desk:true },
     den:        { title:'Den',          icon:'den',        tile:'den',        w:820, h:520, hidden:true, desk:true }
   };
-  var VIS = function(){ return Object.keys(APPS).filter(function(k){ return !APPS[k].hidden; }); };
+  var VIS = function(){ return Object.keys(APPS).filter(function(k){ return !APPS[k].hidden && !appGone(k); }); };   /* an app removed from Terminal (27-shell.js) is gone from every list until it is reinstalled */
   var DOCK_ORDER = ['about','projects','experience','journey','resume','skills','contact','terminal'];
 
 /* tigOS core app.js, part 02: toast. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
@@ -529,9 +529,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
 /* tigOS core app.js, part 06: desktop icons dock. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- desktop icons + dock ---------------- */
   function tileHTML(id){ var a = APPS[id]; return '<span class="tile '+a.tile+'">'+ic(a.icon)+'</span>'; }
-  /* the macOS layout: kept apps, a separator, then the LinkedIn link and the Trash. 27-dock-edit.js swaps in each user's own kept apps
-     and slots running apps that are not kept in before the separator */
-  $('#dock').innerHTML = DOCK_ORDER.map(function(id){
+  /* the macOS layout: Den first (always there, like the Finder), a separator, the kept apps, a separator, then the LinkedIn link and the
+     Trash. 27-dock-edit.js swaps in each user's own kept apps and slots running apps that are not kept in before the separator */
+  $('#dock').innerHTML = '<button class="dk denfix" type="button" data-open="den" data-dock="den" aria-label="Den">'+tileHTML('den')+'<span class="dot"></span><span class="tip">Den</span></button><span class="sep densep"></span>'+DOCK_ORDER.map(function(id){
     return '<button class="dk pin" type="button" data-open="'+id+'" data-dock="'+id+'" aria-label="'+esc(APPS[id].title)+'">'+tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span></button>';
   }).join('') + '<span class="sep main"></span><a class="dk" href="'+TIG.contact.linkedin+'" target="_blank" rel="noopener" aria-label="LinkedIn"><span class="tile linkedin">'+ic('linkedin')+'</span><span class="tip">LinkedIn \u2197</span></a>'+
     '<button class="dk trash" type="button" data-open="trash" data-dock="trash" aria-label="Trash"><span class="tile trash">'+ic('trash')+'</span><span class="tip">Trash</span></button>';
@@ -549,11 +549,11 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     $('#mbApp').textContent = top ? APPS[top.id].title : P.name;
   }
   /* an app that is open but not kept in the Dock (the Arcade, Settings, a folder, one taken out of the Dock) gets an icon only while it
-     runs, behind its own separator, like a recent app on a Mac. The Trash has its own fixed icon */
+     runs, behind its own separator, like a recent app on a Mac. Den and the Trash have their own fixed icons */
   function dockTemp(open){
     var dock = $('#dock'); if(!dock) return;
     var pins = DESKS ? dockList() : DOCK_ORDER, anchor = $('.sep.main', dock) || $('a.dk', dock);
-    var want = open.filter(function(k){ return APPS[k] && APPS[k].sys !== 'trash' && pins.indexOf(k) < 0; }), have = $$('.dk.tmp', dock);
+    var want = open.filter(function(k){ return APPS[k] && APPS[k].sys !== 'trash' && k !== 'den' && pins.indexOf(k) < 0; }), have = $$('.dk.tmp', dock);
     have.forEach(function(d){ if(want.indexOf(d.getAttribute('data-dock')) < 0 && !d.classList.contains('gone')){ d.classList.add('gone'); setTimeout(function(){ d.remove(); var s2 = $('.sep.tmpsep', dock); if(s2 && !$('.dk.tmp:not(.gone)', dock)) s2.remove(); dockFitSoon(); }, 260); } });
     want.forEach(function(id){ var ex = $('.dk.tmp[data-dock="'+id+'"]', dock); if(ex && !ex.classList.contains('gone')){ var tp = $('.tip', ex); if(tp && tp.textContent !== APPS[id].title) tp.textContent = APPS[id].title; return; } if(ex) ex.remove();
       if(!$('.sep.tmpsep', dock)){ var sep = document.createElement('span'); sep.className = 'sep tmpsep'; dock.insertBefore(sep, anchor); }
@@ -577,6 +577,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function open(id, opts){
     opts = opts || {};
     var a = APPS[id]; if(!a) return;
+    if(id === 'trash') return isPhone() ? undefined : denOpen('trash');   /* the Trash is a place in Den, as it is in the Finder */
+    if(appGone(id)){ toast('\u201c'+a.title+'\u201d isn\u2019t installed', appPkg(id) ? 'It\u2019s in the Trash: Put Back reinstalls it.' : 'Reinstall it from Terminal: brew install '+id); return; }
     if((a.sys || a.desk) && isPhone()) return;   /* the Trash, folders, Get Info, Jot and Den are desktop features; a phone has none of them */
     if(WM.wins[id]){ var ex = WM.wins[id]; if(ex.min){ restore(ex); } focus(ex); if(opts.route && ex.route) ex.route(opts.route); return ex; }
     if(isMobile()){ Object.keys(WM.wins).forEach(function(k){ var o = WM.wins[k]; o.el.remove(); delete WM.wins[k]; }); }   // phones: one app at a time
@@ -1355,7 +1357,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var FORTUNES = ['Clear beats clever. Every time.', 'The best campaign is the one people can explain to a friend.', 'You will ship something today. Probably a deck.', 'A brief without a metric is a wish.', 'Ask the customer. Then ask again.', 'Nothing converts like a good headline and a short form.'];
 
   RENDER.terminal = function(w){
-    var ps1 = function(){ return USER.name === 'greggyd' ? 'greggyd@tigos:~$' : USER.name+'@tigos ~ '+USERS[USER.name].shell; };
+    var ps1 = function(){ var t = sh ? esc(sh.tilde()) : '~'; return USER.name === 'greggyd' ? 'greggyd@tigos:'+t+'$' : USER.name+'@tigos '+t+' '+USERS[USER.name].shell; };   /* the folder you are in (27-shell.js), ~ at home */
     var prompt = function(){ return '<span class="p">'+ps1()+'</span>'; };
     w.body.innerHTML = '<div class="term" id="termBody"><div class="line dim">tigOS 2.0 \u2014 type <span class="o">help</span> and press return.</div><div class="in"><span class="p" id="termP"></span><span class="tinw"><input id="termIn" type="text" autocomplete="off" spellcheck="false" aria-label="Terminal input"><span class="ghost" aria-hidden="true"><span class="gv" id="termGv"></span><i class="tcur" id="termCur"></i></span></span></div></div>';
     var body = $('#termBody', w.el), inp = $('#termIn', w.el), pEl = $('#termP', w.el), gv = $('#termGv', w.el);
@@ -1370,7 +1372,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var art = function(lines, cls){ print(lines.map(esc).join('\n'), 'art'+(cls ? ' '+cls : '')); };
     var o = function(t){ return '<span class="o">'+t+'</span>'; };
     var login = function(name){
-      setUser(name); refreshPrompt();
+      setUser(name); if(sh) sh.reset(); refreshPrompt();   /* another user, another desktop: back home */
       if(name === 'ariel'){ print('Welcome back, ariel. Everything is pink now.', 'ok'); toast('i love you!', 'ariel@tigos is logged in'); }
       if(name === 'greggyd'){ art(TUX); print('Welcome to Ubuntu 24.04 LTS (GNU/Linux 6.9.0-tigos x86_64)\n\n * Documentation:  help\n * Support:        hire\n\n0 updates can be applied immediately. You have mail.', 'ok'); toast('Tux has entered the chat', 'greggyd@tigos is logged in'); }
       if(name === 'chase'){ print('Welcome back, chase.', 'ok'); }
@@ -1378,6 +1380,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var CMD = {
       help: function(){
         print('portfolio:  '+['about','experience','journey','projects','skills','resume','contact','open &lt;app&gt;'].map(o).join('  '));
+        print('files:      '+['ls','cd &lt;folder&gt;','cat &lt;note&gt;','nano &lt;note&gt;','mkdir','mv','rm','brew install &lt;app&gt;'].map(o).join('  '));
         print('system:     '+['neofetch','weather','uptime','fps','debug','users','su &lt;user&gt;','settings','theme light|dark','clear','exit'].map(o).join('  '));
         print('this is a real enough shell. most unix, mac, linux and windows commands do something. explore.', 'dim');
       },
@@ -1428,13 +1431,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       logout: function(){ print('logging out '+USER.name+'\u2026'); setTimeout(loginScreen, 400); },
       exit: function(){ CMD.logout(); },
       sudo: function(arg){ if(/make me a sandwich/i.test(arg)) { print('okay.'); return; } print(USER.name === 'chase' ? 'nice try. chase is already the admin here.' : USER.name+' is not in the sudoers file. This incident will be reported.', 'err'); },
-      ls: function(arg){ var f = VIS().map(function(k){ return k+'.app'; }); if(/-l|-la|-al/.test(arg)){ f.forEach(function(x){ print('drwxr-xr-x  '+USER.name+'  staff   4096  Sep  3 14:00  '+x); }); print('-rw-r--r--  '+USER.name+'  staff  117396  Sep  3 14:00  resume.pdf'); } else print(f.concat(['resume.pdf'], isPhone() ? [] : ditems('').filter(function(x){ return x.kind === 'note'; }).map(function(x){ return esc(/\s/.test(x.name) ? '"'+x.name+'"' : x.name); })).join('  ')); },
       dir: function(a){ CMD.ls(a); },
-      pwd: function(){ print(USERS[USER.name].home+'/tigos'); },
-      cd: function(arg){ print(arg && arg !== '~' ? 'cd: '+esc(arg)+': this is a one-directory kind of place' : ''); },
       cat: function(arg){ var cn = jnoteNamed(arg); if(cn){ jotFlush(); print(esc(nbody(cn.id)) || '<span class="dim">('+esc(cn.name)+' is empty)</span>'); } else if(/resume/.test(arg)){ open('resume'); print('binary file. opening Resume.app instead.'); } else if(/\.env|passwd|shadow/.test(arg)){ print('cat: '+esc(arg)+': permission denied. nice try though.', 'err'); } else print('cat: '+esc(arg||'')+': no such file. try '+o('ls')); },
       rm: function(arg){ if(/-rf\s+\/|\*|~/.test(arg)){ print('rm: refusing to remove everything. Chase worked hard on this.', 'err'); toast('Phew', 'rm -rf / has been politely declined.'); } else print('rm: '+esc(arg||'')+': operation not permitted'); },
-      mkdir: function(){ print('mkdir: read-only file system (it\u2019s a portfolio)'); }, touch: function(){ print('touch: read-only file system'); },
       echo: function(arg){ print(esc(arg.replace(/^["']|["']$/g, '')) || ''); },
       date: function(){ print(new Date().toString()); },
       uptime: function(){ var s = Math.round(performance.now()/1000); print('up '+Math.floor(s/60)+' min '+(s%60)+' sec, 1 user, load averages: 0.42 0.42 0.42'); },
@@ -1516,7 +1515,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       df: function(){ print('Filesystem      Size   Used  Avail  Use%  Mounted on\n/dev/tigos     822K   822K     0K  100%  /'); }, du: function(){ print('822K\t.'); }, free: function(){ print('               total        used        free\nMem:         \u221e           some        plenty'); },
       ps: function(){ CMD.top(); }, pstree: function(){ print('tigos\u2500\u252c\u2500dock\n     \u251c\u2500menubar\n     \u2514\u2500terminal\u2500\u2500you'); },
       grep: function(a){ print(a ? 'grep: '+esc(a.split(' ')[0])+': found in every project on this site.' : 'usage: grep [pattern]'); }, egrep: function(a){ CMD.grep(a); }, fgrep: function(a){ CMD.grep(a); }, rg: function(a){ CMD.grep(a); }, ag: function(a){ CMD.grep(a); },
-      find: function(a){ print(/resume/.test(a) ? './resume.pdf' : './'+VIS().join('.app\n./')+'.app'); }, locate: function(a){ CMD.find(a); }, fd: function(a){ CMD.find(a); },
+      locate: function(a){ CMD.find(a); }, fd: function(a){ CMD.find(a); },
       which: function(a){ var c = (a||'').split(' ')[0]; print(c ? (CMD[c] ? '/usr/bin/'+esc(c) : esc(c)+' not found') : 'usage: which <command>'); }, whereis: function(a){ CMD.which(a); }, type: function(a){ var c = (a||'').split(' ')[0]; print(c ? (CMD[c] ? esc(c)+' is a tigsh builtin' : 'type: '+esc(c)+': not found') : 'usage: type <command>'); }, command: function(a){ CMD.type(a.replace(/^-v\s*/, '')); }, hash: function(){ print('hits\tcommand\n   1\t/usr/bin/help'); },
       alias: function(){ print("alias ll='ls -la'\nalias hire='open contact'\nalias gs='git status'"); }, unalias: function(){ print(''); },
       env: function(){ print('USER='+USER.name+'\nHOME='+USERS[USER.name].home+'\nSHELL=/bin/tigsh\nTERM=xterm-256color\nTHEME='+PREF.theme+'\nCITY='+CITY.short); }, printenv: function(){ CMD.env(); }, export: function(a){ print(a ? '' : 'declare -x USER="'+USER.name+'"'); }, set: function(){ CMD.env(); }, unset: function(){ print(''); },
@@ -1525,7 +1524,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       sort: function(a){ print(esc((a||'').split(/\s+/).sort().join(' '))); }, uniq: function(a){ print(esc((a||'').split(/\s+/).filter(function(x, i, arr){ return arr.indexOf(x) === i; }).join(' '))); }, rev: function(a){ print(esc((a||'').split('').reverse().join(''))); }, tac: function(a){ CMD.rev(a); }, nl: function(a){ print('     1\t'+esc(a||'')); },
       awk: function(){ print("awk: '{ print \"hire chase\" }'  \u2192  hire chase"); }, sed: function(){ print('sed: s/boring PDF/operating system/g \u2014 done, that is this site.'); }, cut: function(a){ print(esc((a||'').slice(0, 12))); }, tr: function(a){ print(esc((a||'').toUpperCase())); }, xargs: function(a){ print(esc(a||'')); }, tee: function(a){ print(esc(a||'')); },
       tar: function(){ print('tar: portfolio.tar.gz created (822K). it is just this page.'); }, zip: function(){ print('  adding: tigOS.html (deflated 87%)'); }, unzip: function(){ print('Archive: portfolio.zip\n  inflating: tigOS.html'); }, gzip: function(){ CMD.zip(); }, gunzip: function(){ CMD.unzip(); },
-      cp: function(){ print('cp: read-only file system'); }, mv: function(){ print('mv: read-only file system'); }, ln: function(){ print('ln: the only link that matters is '+o('linkedin')); }, chown: function(){ print('chown: chase already owns everything here.'); }, chgrp: function(){ CMD.chown(); },
+      ln: function(){ print('ln: the only link that matters is '+o('linkedin')); }, chown: function(){ print('chown: chase already owns everything here.'); }, chgrp: function(){ CMD.chown(); },
       passwd: function(){ print('passwd: changing password for '+USER.name+'\npasswd: nope. this is a portfolio.', 'err'); }, useradd: function(){ print('useradd: only chase, ariel and greggyd live here.'); }, adduser: function(){ CMD.useradd(); }, userdel: function(){ print('userdel: absolutely not.'); },
       w: function(){ print(USER.name+'\tconsole\t'+new Date().toLocaleTimeString()+'\tbrowsing the portfolio'); }, who: function(){ CMD.w(); }, finger: function(a){ print('Login: '+esc(a||USER.name)+'\nName: '+(/chase/.test(a||USER.name) ? 'Chase Johnston' : esc(a||USER.name))+'\nPlan: hire chase.'); }, last: function(){ print(USER.name+'  console  '+new Date().toDateString()+'  still logged in'); },
       id: function(){ print('uid=501('+USER.name+') gid=20(staff) groups=20(staff),80(admin),1000(marketing)'); }, groups: function(){ print('staff admin marketing'); }, hostname: function(){ print('chasetiger.com'); }, arch: function(){ print('arm64'); }, lsb_release: function(){ print('Distributor ID: tigOS\nRelease: 2.0\nCodename: clear'); },
@@ -1536,7 +1535,6 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       dig: function(a){ print(';; ANSWER SECTION:\n'+esc(a||'chasetiger.com')+'.\t300\tIN\tA\t127.0.0.1'); }, nslookup: function(a){ CMD.dig(a); }, host: function(a){ CMD.dig(a); }, whois: function(a){ print('Domain Name: '+esc(a||'chasetiger.com')+'\nRegistrant: Chase Johnston\nStatus: shipping'); }, ip: function(){ print('1: lo0: <LOOPBACK> 127.0.0.1\n2: en0: <UP> you are here'); }, route: function(){ print('default via dock dev en0'); },
       docker: function(a){ print(/ps/.test(a) ? 'CONTAINER ID  IMAGE      STATUS\nc0ffee        tigos:2.0  Up since boot' : 'docker: this site runs in a single HTML file. no containers were harmed.'); }, kubectl: function(){ print('kubectl: 1 pod, 1 node, 0 problems. wildly over-engineered for a portfolio.'); }, k: function(){ CMD.kubectl(); }, terraform: function(){ print('Plan: 0 to add, 0 to change, 0 to destroy. it is a static site.'); },
       make: function(){ print('make: Nothing to be done for \'portfolio\'.'); }, gcc: function(){ print('gcc: fatal error: no input files. also this is javascript.'); }, java: function(){ print('java version "21" \u2014 but honestly, try '+o('node')); }, ruby: function(){ print('ruby 3.3 \u2014 puts "hire chase"'); }, go: function(){ print('go: fmt.Println("hire chase")'); }, rustc: function(){ print('rustc: compiled hire_chase in 0.4s. zero unsafe blocks.'); }, cargo: function(){ CMD.rustc(); }, perl: function(){ print('perl -e \'print "hire chase"\'  \u2192  hire chase'); }, php: function(){ print('PHP 8.3 \u2014 <?php echo "hire chase"; ?>'); },
-      tree: function(){ print('.\n\u251c\u2500\u2500 '+VIS().join('.app\n\u251c\u2500\u2500 ')+'.app\n\u2514\u2500\u2500 resume.pdf'); },
       yes: function(a){ print(esc(a||'y')+'\n'+esc(a||'y')+'\n'+esc(a||'y')+'\n... (ok, that is enough)'); }, 'true': function(){ print(''); }, 'false': function(){ print(''); }, test: function(){ print(''); }, '[': function(){ print(''); },
       bc: function(a){ try { var e = (a||'').replace(/[^0-9+\-*\/().% ]/g, ''); print(e ? String(Function('return ('+e+')')()) : 'bc: type an expression, e.g. '+o('bc 2+2')); } catch(err){ print('bc: syntax error', 'err'); } }, expr: function(a){ CMD.bc(a); }, calc: function(a){ CMD.bc(a); },
       banner: function(a){ art(COW(a||'hire chase')); }, figlet: function(a){ CMD.banner(a); }, toilet: function(a){ CMD.banner(a); }, lolcat: function(){ print('\u{1F308} everything is already colourful here.'); }, cmatrix: function(){ CMD.matrix(); },
@@ -1553,18 +1551,20 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       version: function(){ CMD.tigos(); }, ver: function(){ CMD.tigos(); }, uname: function(){ print('tigOS chasetiger.com 2.0 vanilla-js arm64'); }
     };
     Object.keys(EXTRA_CMDS).forEach(function(k){ CMD[k] = function(arg){ EXTRA_CMDS[k](arg, { print:print, art:art, o:o, cmd:CMD }); }; });   /* screensaver, party, do, sl, konami (27-eggs.js) */
+    var sh = shellInstall(CMD, { print:print, o:o, refresh:function(){ refreshPrompt(); } });   /* ls, cd, cat, mkdir, rm, mv, nano, brew install... over the desktop's own files (27-shell.js) */
     /* tab completion: one match fills it in, several extend to the common prefix and a second tab lists them, like bash */
     var ARGS = { open:function(){ return VIS(); }, cat:function(){ return VIS(); }, cd:function(){ return VIS(); }, man:function(){ return Object.keys(CMD).filter(function(k){ return /^[a-z]/.test(k); }); }, su:function(){ return Object.keys(USERS); }, pet:function(){ return Object.keys(PETS).concat(['off']); }, pets:function(){ return Object.keys(PETS).concat(['off']); }, game:function(){ return GAMES.map(function(g){ return g.id; }); }, games:function(){ return GAMES.map(function(g){ return g.id; }); }, play:function(){ return GAMES.map(function(g){ return g.id; }); } };
+    sh.complete(ARGS);   /* file and app names from where you are */
     var lastTab = '';
     var tabComplete = function(){
       var at = inp.selectionStart == null ? inp.value.length : inp.selectionStart, head = inp.value.slice(0, at), tail = inp.value.slice(at), m = /(\S*)$/.exec(head), word = m[1], before = head.slice(0, head.length - word.length), first = !before.trim();
       var pool = first ? Object.keys(CMD).filter(function(k){ return /^[a-z]/.test(k); }).concat(VIS()) : (ARGS[before.trim().split(/\s+/)[0].toLowerCase()] || function(){ return []; })();
       pool = pool.filter(function(k, i, a){ return a.indexOf(k) === i; }).sort();
-      var lw = word.toLowerCase(), cands = pool.filter(function(k){ return k.indexOf(lw) === 0; });
+      var lw = word.toLowerCase(), cands = pool.filter(function(k){ return k.toLowerCase().indexOf(lw) === 0; });   /* Wo finds Work, as zsh does */
       if(!word || !cands.length){ lastTab = ''; return; }
       var set = function(w2, done){ inp.value = before + w2 + (done && !tail ? ' ' : '') + tail; var pos = (before + w2).length + (done && !tail ? 1 : 0); try { inp.setSelectionRange(pos, pos); } catch(err){} syncCur(); };
       if(cands.length === 1){ set(cands[0], true); lastTab = ''; return; }
-      var pre = cands.reduce(function(a, b){ var i = 0; while(i < a.length && i < b.length && a[i] === b[i]) i++; return a.slice(0, i); });
+      var pre = cands.reduce(function(a, b){ var i = 0; while(i < a.length && i < b.length && a[i].toLowerCase() === b[i].toLowerCase()) i++; return a.slice(0, i); });
       if(pre.length > word.length){ set(pre, false); lastTab = before + pre; return; }
       if(lastTab === head){ var cw = Math.max.apply(null, cands.map(function(k){ return k.length; })) + 2, cols = Math.max(1, Math.floor(72 / cw)), rows = [];
         for(var i = 0; i < cands.length; i += cols) rows.push(cands.slice(i, i + cols).map(function(k){ return k + ' '.repeat(cw - k.length); }).join('').replace(/\s+$/, ''));
@@ -1881,7 +1881,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       '<div class="set-group"><div class="eyebrow">Pets</div></div>'+
       row('Desktop pet', PREF.pet && PETS[PREF.pet] ? esc(PETS[PREF.pet].name)+' the '+esc(PETS[PREF.pet].label)+' is out. Drag them anywhere; drop them on the X to say goodbye.' : 'A 3D companion that lives on the desktop. Pick one.', pick)+
       row('Pet size', '', '<div class="pet-ctl">'+seg('petsize', [['sm','Small'],['md','Medium'],['lg','Large']])+'<button type="button" class="pet-more" data-open-pets>Open Pets</button></div>')+
-      '<div class="set-foot"><span>tigOS 2.0 \u00b7 '+VIS().length+' apps</span><button type="button" data-reset>Reset to defaults</button></div></div>';
+      '<div class="set-foot"><span>tigOS 2.0 \u00b7 '+VIS().filter(function(k){ return !(APPS[k].desk && isPhone()); }).length+' apps</span><button type="button" data-reset>Reset to defaults</button></div></div>';
     $$('.seg[data-pref] button', w.body).forEach(function(b){ b.addEventListener('click', function(){ setPref(b.parentNode.getAttribute('data-pref'), b.getAttribute('data-v')); }); });
     $$('.seg[data-dview] button', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.parentNode.getAttribute('data-dview'), v = b.getAttribute('data-v'); dviewSet(k, v === 'true' ? true : v === 'false' ? false : v); }); });
     var drs = $('[data-dock-reset]', w.body); if(drs) drs.addEventListener('click', dockResetAsk);
@@ -1902,7 +1902,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var spot = $('#spotlight'), spotIn = $('#spotInput'), spotRes = $('#spotResults'), spotSel = 0;
   function index(){
     var items = [];
-    VIS().forEach(function(k){ items.push({ t:APPS[k].title, s:'Open app', k:'App', tile:APPS[k].tile, icon:APPS[k].icon, go:function(){ open(k); } }); });
+    Object.keys(APPS).filter(function(k){ return !APPS[k].hidden; }).forEach(function(k){ items.push({ t:APPS[k].title, s:'Open app', k:'App', desk:!!APPS[k].desk, tile:APPS[k].tile, icon:APPS[k].icon, go:function(){ open(k); } }); });   /* all of them: one removed from Terminal drops out at search time (spotRender), so a reinstall brings it straight back */
     /* hidden apps never sit in the default list, but a search for them (or for what is inside them) finds them */
     items.push({ t:APPS.games.title, s:'Open app \u00b7 '+GAMES.length+' games', k:'App', hidden:true, tile:'games', icon:'gamepad', hay:'arcade game games play '+GAMES.map(function(g){ return g.id+' '+g.name; }).join(' '), go:function(){ open('games'); } });
     items.push({ t:APPS.pets.title, s:'Open app \u00b7 desktop companions', k:'App', hidden:true, tile:'paw', icon:'paw', hay:'pet pets companion '+Object.keys(PETS).map(function(k){ return k+' '+PETS[k].name+' '+PETS[k].label; }).join(' '), go:function(){ open('pets'); } });
@@ -1926,7 +1926,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function spotNotes(){ return jnotes().map(function(it){ return { t:it.name, s:'Note \u00b7 '+dwhere(it)+' \u00b7 '+jwhen(it.m || it.t), k:'Note', desk:true, tile:'jot', icon:'jot', hay:nbody(it.id).slice(0, 20000), go:function(){ jotOpen(it.id); } }; }); }
   function spotRender(q){
     q = (q||'').trim().toLowerCase();
-    var ph = isPhone(), all = (ph ? IDX : IDX.concat(q ? spotNotes() : [])).filter(function(it){ return !(it.desk && ph); });
+    var ph = isPhone(), all = (ph ? IDX : IDX.concat(q ? spotNotes() : [])).filter(function(it){ return !(it.desk && ph) && !(APPS[it.tile] && appGone(it.tile)); });   /* a removed app, and what lives inside it, is not offered */
     /* rank: exact title, title prefix, title, subtitle, then the hidden search text, so typing a game or pet's name puts it first, ahead of the app that merely lists it */
     var rank = function(it){ var t = it.t.toLowerCase(), sub = (it.s||'').toLowerCase(), hay = (it.hay||'').toLowerCase(); return t === q ? 0 : t.indexOf(q) === 0 ? 1 : t.indexOf(q) > -1 ? 2 : sub.indexOf(q) > -1 ? 3 : hay.indexOf(q) > -1 ? 4 : 5; };
     spotHits = all.filter(function(it){ if(!q) return it.k === 'App' && !it.hidden; return (it.t+' '+it.s+' '+(it.hay||'')).toLowerCase().indexOf(q) > -1; }).map(function(it, i){ return { it:it, i:i, r:rank(it) }; }).sort(function(a, b){ return a.r - b.r || a.i - b.i; }).map(function(x){ return x.it; }).slice(0, 10);   /* room for the Pets app plus all nine pets */
@@ -2080,7 +2080,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     { sel:'#mbWx', t:'Live weather', s:'Current conditions for the city in the menubar. Hover for the next three days.', sm:'Current conditions for the chosen city. Tap for the next three days.' },
     { sel:'#mbLoc', alt:'#mbClock', t:'Pick a city', s:'New York is home, but the clock and weather can follow you: Seattle, Austin, Tokyo\u2026', sm:'Tap the clock. New York is home, but the time and weather can follow you: Seattle, Austin, Tokyo\u2026' },
     { sel:'#mbPower', t:'Power', s:'Sleep, restart, or shut tigOS down. It will come back when you ask.' },
-    { sel:'#mbLogo', t:'tigOS menu', s:'Settings (light mode, accent, dock), the tour, and the terminal. Yes, there is a terminal.', sm:'Settings (light mode, accent, text size), the tour, and the terminal. Yes, there is a terminal.' }
+    { sel:'#mbLogo', t:'tigOS menu', s:'Settings (light mode, accent, dock), the tour, and the terminal. Yes, there is a terminal.', sm:'Settings (light mode, accent, text size), the tour, and the terminal. Yes, there is a terminal.', ph:'Settings (light mode, accent, text size) and this tour.' }
   ];
   var tourEl = null;
   function tourEnd(){ if(tourEl){ tourEl.remove(); tourEl = null; } root.classList.remove('touring'); }
@@ -2092,7 +2092,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var target = $(step.sel); if(!vis(target) && step.alt) target = $(step.alt); if(!vis(target)) return tour(i+1);
     var r = target.getBoundingClientRect(), rr = root.getBoundingClientRect(), mob = isMobile();
     tourEl = document.createElement('div'); tourEl.className = 'tour-tip';
-    tourEl.innerHTML = '<b>'+step.t+'</b>'+((mob && step.sm) || step.s)+'<div class="row"><button type="button" class="skip">Skip</button><button type="button" class="go">'+(i === TOUR.length-1 ? 'Done' : 'Next')+'</button></div>';
+    tourEl.innerHTML = '<b>'+step.t+'</b>'+((isPhone() && step.ph) || (mob && step.sm) || step.s)+'<div class="row"><button type="button" class="skip">Skip</button><button type="button" class="go">'+(i === TOUR.length-1 ? 'Done' : 'Next')+'</button></div>';
     root.appendChild(tourEl);
     var tw = tourEl.offsetWidth, th = tourEl.offsetHeight;
     var cx = r.left - rr.left + r.width/2, below = r.top - rr.top < rr.height/2;
@@ -2284,7 +2284,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
      macOS-style menu at a point in desktop coordinates, or above / beside a dock icon, and keeps it inside the desktop (which is the whole
      iframe when the site is embedded). It runs from the mouse (hover opens submenus, press-drag-release picks an item), the keyboard
      (arrows, Return, Escape, a letter jumps) or a finger. An item is
-       { t:label, i:icon, k:shortcut hint (hidden on a phone), note:a quiet aside, on:checked, dis:disabled, fn:action, sub:[items] or a function returning them, dot:colour, id:test hook }
+       { t:label, i:icon, k:shortcut hint (hidden on a phone), note:a quiet aside, on:checked, dis:disabled, fn:action, sub:[items] or a function returning them, dot:colour, id:test hook, danger:red }
      '-' draws a separator, { h:'Label' } a section heading, { tags:current, fn:function(colour) } the row of colour tags. Falsy entries are
      skipped, so a menu reads as a list of conditions. What goes in each menu lives in 27-menus.js; the desktop and dock behind it in
      27-desktop.js and 27-dock-edit.js. The browser keeps its own menu wherever it is the useful one: text, links and everything inside an app window. */
@@ -2469,6 +2469,12 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function ctxTarget(t, touch){
     if(!t || !t.closest || !root.contains(t)) return null;
     if(t.closest('.ctx')) return { kind:'none' };
+    var jw = t.closest('.win[data-app="jot"]');   /* Jot: its notes and its text get menus of their own; the name field keeps the browser's */
+    if(jw && !t.closest('.jsheet-bg')){
+      var jt = t.closest('.jot-text'); if(jt) return touch ? null : { kind:'jotdoc', el:jt };
+      var ji = t.closest('.jot-it'); if(ji) return { kind:'jot', el:ji };
+      if(t.closest('.jot-side') && !t.closest('button')) return { kind:'jotside', el:t.closest('.jot-side') };
+    }
     if(t.closest('input, textarea, select, [contenteditable="true"]')) return null;
     if(t.closest('#login, #sleep, #off, #shutdown, #boot, .dlg-bg')) return touch ? null : { kind:'none' };
     if(t.closest('#spotlight, #lightbox, .egg, .tour-tip, .toast')) return null;
@@ -2557,11 +2563,11 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
      tigOS's Finder (a tiger keeps its things in a den). A sidebar of places (the Desktop, every note wherever it is, the apps, each
      folder, the Trash) beside that place's icons. The icons are the desktop's own (27-desktop.js): click to select, drag them onto a
      folder, a place in the sidebar, the desktop or the Trash, rename, Get Info and the same right-click menus. A folder opens in place,
-     with Back and Forward. Phones have no Den. */
-  var DEN = { loc:'', back:[], fwd:[], want:null };
+     with Back and Forward. Den sits at the far left of the Dock, and the Trash in the Dock opens here, at the Trash. Phones have no Den. */
+  var DEN = { loc:'', back:[], fwd:[], want:null, seen:null };
   function denOk(loc){ if(loc === '' || loc === '*notes' || loc === '*apps' || loc === 'trash') return true; var it = ditem(loc); return !!(it && it.kind === 'folder' && it.in !== 'trash'); }
   function denLabel(loc){ return loc === '' ? 'Desktop' : loc === '*notes' ? 'Notes' : loc === '*apps' ? 'Applications' : loc === 'trash' ? 'Trash' : (ditem(loc) || { name:'Desktop' }).name; }
-  function denApps(){ return VIS().concat(['jot', 'den']); }
+  function denApps(){ return appsInstalled(); }
   /* open Den at a place, optionally with one item selected (Show in Den) */
   function denOpen(loc, sel){
     if(isPhone()) return null;
@@ -2584,8 +2590,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   RENDER.den = function(w){
     w.el.classList.add('den-win');
     w.tools.innerHTML = '<button type="button" data-den="back" aria-label="Back" title="Back">'+ic('back')+'</button><button type="button" data-den="fwd" aria-label="Forward" title="Forward">'+ic('fwd')+'</button>'+
-      '<button type="button" data-den="folder" aria-label="New Folder" title="New Folder">'+ic('folder-plus')+'</button><button type="button" data-den="note" aria-label="New Note" title="New Note">'+ic('jot')+'</button>'+
-      '<button type="button" data-den="empty" title="Empty Trash">Empty</button>';
+      '<button type="button" data-den="folder" aria-label="New Folder" title="New Folder">'+ic('folder-plus')+'</button><button type="button" data-den="note" aria-label="New Note" title="New Note">'+ic('jot')+'</button>';
     w.body.innerHTML = '<div class="denw"><nav class="den-side" aria-label="Places"></nav><section class="den-main"></section></div>';
     $$('[data-den]', w.tools).forEach(function(b){ b.addEventListener('click', function(){
       var k = b.getAttribute('data-den'), L = DEN.loc;
@@ -2593,16 +2598,15 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       if(k === 'fwd') denStep(1);
       if(k === 'folder' && L === ''){ DFOCUS = $('.den-fw', w.body) || DFOCUS; dnewFolder(null); }
       if(k === 'note') jotNewIn(L === '*notes' || !denOk(L) || L === 'trash' || L === '*apps' ? '' : L);
-      if(k === 'empty') demptyAsk();
     }); });
     $('.den-side', w.body).addEventListener('click', function(e){ var b = e.target.closest('[data-loc]'); if(b) denGo(b.getAttribute('data-loc')); });
     /* Applications: click selects, a double-click (or a tap) opens, as in Finder */
     var main = $('.den-main', w.body);
-    main.addEventListener('click', function(e){ var b = e.target.closest('.den-app'); $$('.den-app.sel', main).forEach(function(x){ if(x !== b) x.classList.remove('sel'); }); if(!b) return; b.classList.add('sel'); if(Date.now() - CTX.touchT < 900) open(b.getAttribute('data-app'), { from:b }); });
+    main.addEventListener('click', function(e){ if(e.target.closest('[data-den="empty"]')){ demptyAsk(); return; } var b = e.target.closest('.den-app'); $$('.den-app.sel', main).forEach(function(x){ if(x !== b) x.classList.remove('sel'); }); if(!b) return; b.classList.add('sel'); if(Date.now() - CTX.touchT < 900) open(b.getAttribute('data-app'), { from:b }); });
     main.addEventListener('dblclick', function(e){ var b = e.target.closest('.den-app'); if(b) open(b.getAttribute('data-app'), { from:b }); });
     main.addEventListener('keydown', function(e){ var b = e.target.closest && e.target.closest('.den-app'); if(b && e.key === 'Enter'){ e.preventDefault(); open(b.getAttribute('data-app'), { from:b }); } });
-    if(DEN.want != null){ DEN.loc = DEN.want; DEN.want = null; }
-    DEN.back = []; DEN.fwd = [];
+    DEN.loc = DEN.want != null ? DEN.want : ''; DEN.want = null;   /* a fresh window starts on the Desktop, unless it was opened somewhere (the Trash) */
+    DEN.back = []; DEN.fwd = []; DEN.seen = null;
     denDraw();
   };
   function denDraw(){
@@ -2616,7 +2620,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       (folders.length ? '<div class="den-sh">Folders</div>'+folders.map(function(f){ return row(f.id, 'folder', f.name, f.tag); }).join('') : '')+
       '<div class="den-sh">Locations</div>'+row('trash', dtrashed().length ? 'trash-full' : 'trash', 'Trash');
     side.scrollTop = ss;
-    var st = main.scrollTop, had = DFOCUS && DFOCUS !== DLAYER && main.contains(DFOCUS), sel = dselIds(main), n;
+    var st = main.scrollTop, had = DFOCUS && DFOCUS !== DLAYER && main.contains(DFOCUS), sel = dselIds(main), n, same = DEN.seen && DEN.seen.loc === L, snap = same ? fsnap(main) : null;
     if(L === '*apps'){
       var apps = denApps(); n = apps.length;
       main.innerHTML = '<div class="den-apps" role="list">'+apps.map(function(k){ return '<button type="button" class="den-app" role="listitem" data-app="'+k+'" aria-label="'+esc(APPS[k].title)+'">'+tileHTML(k)+'<span>'+esc(APPS[k].title)+'</span></button>'; }).join('')+'</div><div class="fw-foot">'+n+' apps</div>';
@@ -2625,17 +2629,20 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       list.sort(L === 'trash' ? function(a, b){ return (b.t2 || 0) - (a.t2 || 0); } : L === '*notes' ? function(a, b){ return (b.m || b.t) - (a.m || a.t); } : dcmp('name'));
       n = list.length;
       var empty = L === '' ? 'Nothing on the Desktop yet.' : L === '*notes' ? 'No notes yet. New Note starts one.' : null;
-      main.innerHTML = '<div class="fw den-fw'+(L === 'trash' ? ' trashw' : '')+'" data-folder="'+esc(L)+'">'+fgrid(list, L, empty)+'<div class="fw-foot">'+(n === 1 ? '1 item' : n+' items')+'</div></div>';
+      var head = L !== 'trash' ? '' : '<div class="den-trh"><span class="tile trash">'+ic(n ? 'trash-full' : 'trash')+'</span><div class="den-trt"><b>Trash</b><span>'+(n ? (n === 1 ? '1 item' : n+' items')+' \u00b7 erased for good when you empty it' : 'Nothing in here')+'</span></div><button type="button" data-den="empty"'+(n ? '' : ' disabled')+'>Empty</button></div>';
+      main.innerHTML = head+'<div class="fw den-fw'+(L === 'trash' ? ' trashw' : '')+'" data-folder="'+esc(L)+'">'+fgrid(list, L, empty, same ? DEN.seen.ids : null)+'<div class="fw-foot">'+(n === 1 ? '1 item' : n+' items')+'</div></div>';
       sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', main); if(e) e.classList.add('sel'); });
       if(had) DFOCUS = $('.den-fw', main);   /* a redraw keeps the keyboard here */
+      DEN.seen = { loc:L, ids:fseen(list) };
     }
+    if(L === '*apps') DEN.seen = { loc:L, ids:{} };
     main.scrollTop = st;
+    if(snap) fbye(snap, main, w.el);   /* whatever left this place bows out where it stood */
     var t = $('.win-title', w.el); if(t) t.innerHTML = ic('den')+esc(denLabel(L));
     w.el.setAttribute('aria-label', 'Den, '+denLabel(L));
     var tb = function(k){ return $('[data-den="'+k+'"]', w.tools); };
     tb('back').disabled = !DEN.back.some(denOk); tb('fwd').disabled = !DEN.fwd.some(denOk);
     tb('folder').hidden = L !== ''; tb('note').hidden = L === 'trash' || L === '*apps';
-    tb('empty').hidden = L !== 'trash'; tb('empty').disabled = !dtrashed().length;
   }
 /* tigOS core app.js, part 27: desktop items. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- desktop: icons, folders, the Trash, Get Info ----------------
@@ -2643,7 +2650,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
      grid cell counted from the top right, like macOS), what the desktop shows (icons, the welcome text, icon size, sort order), the dock
      layout (27-dock-edit.js) and the apps that open at login. A fresh visit has none of it: the clean hero, the dock as the launcher.
      An item is { id, kind:'app'|'folder'|'note', app, name, in:'' (desktop) | folder id | 'trash', c, r, t:added, tag, from, fc, fr }; a note
-     (27-jot.js) adds m:modified and auto (named from its first line until renamed), and keeps its text in its own store. */
+     (27-jot.js) adds m:modified and auto (named from its first line until renamed), and keeps its text in its own store. An app removed
+     from Terminal (27-shell.js) waits in the Trash as an item with pkg:1, so Put Back reinstalls it; its aliases hide until it is back. */
   var DSTORE = {
     get: function(){ var raw = null; try { raw = localStorage.getItem('tigos.desk'); } catch(e){} if(!raw){ try { var m = document.cookie.match(/(?:^|; )tigos\.desk=([^;]*)/); if(m) raw = decodeURIComponent(m[1]); } catch(e){} } return raw; },
     set: function(raw){ try { localStorage.setItem('tigos.desk', raw); } catch(e){} try { var v = encodeURIComponent(raw); if(v.length < 3600){ document.cookie = 'tigos.desk='+v+'; max-age=31536000; path=/; SameSite=None; Secure'; document.cookie = 'tigos.desk='+v+'; max-age=31536000; path=/; SameSite=Lax'; } } catch(e){} }
@@ -2659,7 +2667,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dview(k){ var v = DK().view; return k in v ? v[k] : DVIEW[k]; }
   function dviewSet(k, v){ var d = DK(); if(v === DVIEW[k]) delete d.view[k]; else d.view[k] = v; deskSave(); drender(); }
   function ditem(id){ return DK().items[id] || null; }
-  function dlive(it){ return it && (it.kind === 'folder' || it.kind === 'note' || (it.kind === 'app' && APPS[it.app] && !APPS[it.app].sys)); }
+  function dlive(it){ return it && (it.kind === 'folder' || it.kind === 'note' || (it.kind === 'app' && APPS[it.app] && !APPS[it.app].sys && (it.pkg ? it.in === 'trash' : !appGone(it.app)))); }
   function ditems(where){ var d = DK(); return Object.keys(d.items).map(function(k){ return d.items[k]; }).filter(function(it){ return dlive(it) && (it.in || '') === where; }); }
   function dinside(it){ return it.in && it.in !== 'trash' && ditem(it.in) ? it.in : (it.in === 'trash' ? 'trash' : ''); }
   function dwhere(it){ var w = dinside(it); return w === 'trash' ? 'Trash' : w ? ditem(w).name : 'Desktop'; }
@@ -2740,13 +2748,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var phone = isPhone(), g = dgrid(), pos = phone ? {} : dlayout(g), its = phone ? [] : ditems(''), have = {};   /* a phone has no desktop icons: what was saved stays saved, it is just not drawn */
     DPOS = pos; if(DLAYOUT_NEW){ DLAYOUT_NEW = false; deskSave(); }   /* a new item keeps the cell it was first given */
     root.style.setProperty('--di', g.s+'px'); root.style.setProperty('--dcw', g.cw+'px');
-    $$('.dicon', DLAYER).forEach(function(el){ have[el.getAttribute('data-id')] = el; });
+    $$('.dicon:not(.bye)', DLAYER).forEach(function(el){ have[el.getAttribute('data-id')] = el; });
     its.forEach(function(it){
       var el = have[it.id]; delete have[it.id];
-      if(!el){ el = dmake(it); el.classList.add('new'); DLAYER.appendChild(el); setTimeout(function(){ el.classList.remove('new'); }, 420); } else dsync(el, it);
+      if(!el){ el = dmake(it); el.classList.add('new'); DLAYER.appendChild(el); setTimeout(function(){ el.classList.remove('new'); }, 620); } else dsync(el, it);
       var p = pos[it.id]; el.style.left = g.x(p.c)+'px'; el.style.top = g.y(p.r)+'px'; el.style.width = g.cw+'px';
     });
-    Object.keys(have).forEach(function(k){ have[k].remove(); });
+    Object.keys(have).forEach(function(k){ dbye(have[k]); });
     var icons = dview('icons'), hero = dview('hero');
     root.classList.toggle('desk-noicons', !phone && !icons); root.classList.toggle('desk-nohero', !phone && (!icons || !hero));   /* and its welcome text always shows */
     fsyncAll(); trashLook();
@@ -2754,6 +2762,30 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var sw = WM.wins.settings; if(sw) $$('[data-dview]', sw.body).forEach(function(g){ var k = g.getAttribute('data-dview'); $$('button', g).forEach(function(b){ b.classList.toggle('on', String(dview(k)) === b.getAttribute('data-v')); }); });
   }
   var drT = 0; window.addEventListener('resize', function(){ cancelAnimationFrame(drT); drT = requestAnimationFrame(drender); });
+  /* ---------- coming and going: a new icon blows in like a bubble (.new, 41-desktop-menus.css), one that leaves pops where it stood ----------
+     A leaving desktop icon stays in place as a nameless copy for its pop; in a folder or Den, whose icons are redrawn, fsnap notes where
+     each one stood before the redraw and fbye pops the ones that went, over the window */
+  function dbye(el){
+    if(PREF.motion === 'off' || !el.isConnected || root.classList.contains('phone')){ el.remove(); return; }
+    el.classList.remove('sel', 'new', 'flash', 'drop-on', 'dragging'); el.classList.add('bye');
+    el.removeAttribute('data-id'); el.removeAttribute('data-kind'); el.removeAttribute('role'); el.setAttribute('aria-hidden', 'true');
+    setTimeout(function(){ el.remove(); }, 420);
+  }
+  function fseen(list){ var m = {}; list.forEach(function(it){ m[it.id] = 1; }); return m; }
+  function fsnap(box){
+    var m = {}; if(!box || PREF.motion === 'off') return m;
+    $$('.fw .dicon[data-id]', box).forEach(function(e){ var r = e.getBoundingClientRect(); if(r.width) m[e.getAttribute('data-id')] = { el:e, r:r }; });
+    return m;
+  }
+  function fbye(snap, box, host){
+    var ids = Object.keys(snap || {}).filter(function(id){ return !$('.fw .dicon[data-id="'+id+'"]', box); }); if(!ids.length || !host || !host.isConnected) return;
+    var hr = host.getBoundingClientRect(), b = box.getBoundingClientRect(), layer = document.createElement('div'); layer.className = 'fw fw-bye'; layer.setAttribute('aria-hidden', 'true');
+    ids.forEach(function(id){ var s = snap[id], r = s.r; if(r.bottom < b.top || r.top > b.bottom) return;   /* scrolled out of sight: nothing to show */
+      var c = s.el.cloneNode(true); c.classList.remove('sel', 'new', 'flash', 'drop-on', 'dragging'); c.classList.add('bye'); c.removeAttribute('data-id'); c.removeAttribute('data-kind');
+      c.style.cssText = 'position:absolute;left:'+(r.left - hr.left)+'px;top:'+(r.top - hr.top)+'px;width:'+r.width+'px;height:'+r.height+'px'; layer.appendChild(c); });
+    if(!layer.children.length) return;
+    host.appendChild(layer); setTimeout(function(){ layer.remove(); }, 420);
+  }
   /* selection: one set at a time, inside the desktop or one folder window, like Finder */
   var DFOCUS = null;
   function dhost(el){ return el.closest('.fw') || DLAYER; }
@@ -2814,7 +2846,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   }
   function dmove(ids, where){
     var d = DK(), n = 0;
-    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.id === where) return; if(it.kind === 'folder' && where !== '' && where !== 'trash') return; if((it.in || '') === where) return; if(!dnameFree(it.name, where, id)) it.name = dnameNew(it.name, where); it.in = where; it.c = -1; it.r = -1; delete it.from; n++; });
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.id === where || it.pkg) return; if(it.kind === 'folder' && where !== '' && where !== 'trash') return; if((it.in || '') === where) return; if(!dnameFree(it.name, where, id)) it.name = dnameNew(it.name, where); it.in = where; it.c = -1; it.r = -1; delete it.from; n++; });
     if(n){ deskSave(); drender(); }
     return n;
   }
@@ -2822,26 +2854,30 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dtrash(ids){
     var d = DK(), n = 0;
     ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in === 'trash') return; it.from = dinside(it); it.fc = it.c; it.fr = it.r; it.in = 'trash'; it.t2 = Date.now(); n++; var fw = WM.wins['fold-'+id]; if(fw) close(fw); });
-    if(n){ deskSave(); drender(); var tk = $('#dock .dk.trash'); if(tk){ tk.classList.remove('gulp'); void tk.offsetWidth; tk.classList.add('gulp'); } }
+    if(n){ deskSave(); drender(); trashGulp(); }
     return n;
   }
+  function trashGulp(){ var tk = $('#dock .dk.trash'); if(tk){ tk.classList.remove('gulp'); void tk.offsetWidth; tk.classList.add('gulp'); } }
   function dputBack(ids){
     var d = DK(), g = dgrid(), taken = {}, n = 0;
     Object.keys(DPOS).forEach(function(k){ taken[DPOS[k].c+','+DPOS[k].r] = 1; });
-    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; var back = it.from && it.from !== 'trash' && d.items[it.from] && d.items[it.from].in !== 'trash' ? it.from : '';
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; if(it.pkg){ appInstall(it.app); n++; return; }   /* a removed app: Put Back reinstalls it */
+      var back = it.from && it.from !== 'trash' && d.items[it.from] && d.items[it.from].in !== 'trash' ? it.from : '';
       it.in = back; if(back === ''){ if(it.fc >= 0 && !taken[it.fc+','+it.fr]){ it.c = it.fc; it.r = it.fr; } else { it.c = -1; it.r = -1; } if(it.c >= 0) taken[it.c+','+it.r] = 1; it.name = dnameFree(it.name, '', id) ? it.name : dnameNew(it.name, ''); }
       delete it.from; delete it.fc; delete it.fr; delete it.t2; n++; });
     if(n){ deskSave(); drender(); }
     return n;
   }
   function dtrashed(){ return ditems('trash'); }
-  function dempty(){
-    var d = DK(), gone = {};
-    dtrashed().forEach(function(it){ gone[it.id] = 1; });
-    var bodies = [];
+  /* erasing is for good: these items from the Trash, and whatever a folder there held (rm inside ~/.Trash in Terminal uses it too) */
+  function derase(ids){
+    var d = DK(), gone = {}, bodies = [], n = 0;
+    ids.forEach(function(id){ var it = d.items[id]; if(it && it.in === 'trash' && !gone[id]){ gone[id] = 1; n++; } });
     Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(gone[k] || (it.in && gone[it.in])) { var fw = WM.wins['fold-'+k]; if(fw) close(fw); if(it.kind === 'note') bodies.push(k); delete d.items[k]; } });
     nforget(bodies); deskSave(); drender();
+    return n;
   }
+  function dempty(){ return derase(dtrashed().map(function(it){ return it.id; })); }
   function demptyAsk(){
     var n = dtrashed().length; if(!n) return;
     sheet('Are you sure you want to permanently erase the '+(n === 1 ? 'item' : n+' items')+' in the Trash?', 'You can\u2019t undo this action.', 'Empty Trash', function(){ dempty(); toast('Trash emptied', n === 1 ? '1 item erased.' : n+' items erased.'); });
@@ -2858,28 +2894,22 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     RENDER[k] = function(w){ fdraw(w, id); };
     return open(k, { from:from });
   }
-  function fgrid(list, where, empty){
+  /* seen: the ids drawn last time in this same place, so the ones that just arrived blow in */
+  function fgrid(list, where, empty, seen){
     if(!list.length) return '<div class="fw-empty">'+(empty || (where === 'trash' ? 'The Trash is empty.' : 'This folder is empty.'+(isMobile() ? '' : ' Drag items here.')))+'</div>';
-    return '<div class="fw-grid">'+list.map(function(it){ return '<div class="dicon fi" data-id="'+it.id+'" data-kind="'+it.kind+'"'+(it.app ? ' data-app="'+it.app+'"' : '')+' role="button" aria-label="'+esc(it.name)+'">'+diconHTML(it)+'</div>'; }).join('')+'</div>';
+    return '<div class="fw-grid">'+list.map(function(it){ return '<div class="dicon fi'+(seen && !seen[it.id] ? ' new' : '')+'" data-id="'+it.id+'" data-kind="'+it.kind+'"'+(it.app ? ' data-app="'+it.app+'"' : '')+' role="button" aria-label="'+esc(it.name)+'">'+diconHTML(it)+'</div>'; }).join('')+'</div>';
   }
   function fdraw(w, id){
     var it = ditem(id); if(!it){ return; }
-    var list = dkids(id).sort(dcmp('name')), sel = dselIds(w.body), had = DFOCUS && DFOCUS !== DLAYER && w.body.contains(DFOCUS);
-    w.body.innerHTML = '<div class="fw" data-folder="'+id+'">'+fgrid(list, id)+'<div class="fw-foot">'+(list.length === 1 ? '1 item' : list.length+' items')+'</div></div>';
+    var list = dkids(id).sort(dcmp('name')), sel = dselIds(w.body), had = DFOCUS && DFOCUS !== DLAYER && w.body.contains(DFOCUS), snap = w._seen ? fsnap(w.body) : null;
+    w.body.innerHTML = '<div class="fw" data-folder="'+id+'">'+fgrid(list, id, null, w._seen)+'<div class="fw-foot">'+(list.length === 1 ? '1 item' : list.length+' items')+'</div></div>';
     if(had) DFOCUS = $('.fw', w.body);   /* a redraw keeps the keyboard on this folder */
     sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', w.body); if(e) e.classList.add('sel'); });
+    w._seen = fseen(list); if(snap) fbye(snap, w.body, w.el);
   }
-  RENDER.trash = function(w){
-    var list = dtrashed().sort(function(a, b){ return (b.t2 || 0) - (a.t2 || 0); }), sel = dselIds(w.body);
-    w.tools.innerHTML = '<button type="button" data-empty'+(list.length ? '' : ' disabled')+'>Empty</button>';
-    $('[data-empty]', w.tools).addEventListener('click', demptyAsk);
-    w.body.innerHTML = '<div class="fw trashw" data-folder="trash">'+fgrid(list, 'trash')+'<div class="fw-foot">'+(list.length === 1 ? '1 item' : list.length+' items')+'</div></div>';
-    sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', w.body); if(e) e.classList.add('sel'); });
-  };
   function fsyncAll(){
     Object.keys(WM.wins).forEach(function(k){ var w = WM.wins[k], a = APPS[k]; if(!a) return;
       if(a.sys === 'folder'){ var it = ditem(a.folder); if(!it || it.in === 'trash'){ close(w); return; } fdraw(w, a.folder); }
-      if(a.sys === 'trash') RENDER.trash(w);
       if(a.sys === 'info' && INFO.t) RENDER.info(w);
       if(k === 'den') denDraw();
       if(k === 'jot') jotSync();
@@ -2907,6 +2937,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       name = it.name; head = '<span class="gi-art">'+(it.kind === 'folder' ? '<span class="dart"'+(it.tag ? ' style="--fc:'+tagHex(it.tag)+'"' : '')+'>'+FOLDER_SVG+'</span>' : it.kind === 'note' ? '<span class="dart">'+noteSVG(it.name)+'</span>' : tileHTML(it.app))+'</span>';
       if(it.kind === 'note'){ if(JOT.id === it.id) jotFlush(); var tx = nbody(it.id), wc = nwords(tx), md = /\.(md|markdown)$/i.test(it.name); kind = md ? 'Markdown Document' : 'Plain Text Document'; sub = wc === 1 ? '1 word' : wc+' words'; row('Kind', kind); row('Size', esc(sub+' \u00b7 '+tx.length+' characters')); row('Opens with', 'Jot'); }
       else if(it.kind === 'folder'){ var n = dkids(it.id).length; kind = 'Folder'; sub = n === 1 ? '1 item' : n+' items'; row('Kind', 'Folder'); row('Contains', esc(sub)); }
+      else if(it.pkg){ kind = 'Application'; sub = 'Removed'; row('Kind', 'Application'); row('Status', 'Removed, Put Back reinstalls it'); }
       else { kind = 'Alias'; sub = 'Opens '+esc(APPS[it.app].title); row('Kind', 'Alias'); row('Original', esc(APPS[it.app].title)+' (app)'); row('In the Dock', dockHas(it.app) ? 'Yes' : 'No'); }
       row('Where', esc(dwhere(it))); row(it.kind === 'note' ? 'Created' : 'Added', esc(infoFmt(it.t))); if(it.kind === 'note' && it.m) row('Modified', esc(infoFmt(it.m)));
       if(it.in === 'trash' && it.t2) row('Trashed', esc(infoFmt(it.t2)));
@@ -3009,6 +3040,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var drop = st.drop, d = DK(), gh = st.gh, from = st.host === DLAYER ? '' : st.host.getAttribute('data-folder');
     var unhide = function(){ st.sel.forEach(function(s){ s.classList.remove('dragging'); }); };
     var sink = function(){ gh.classList.add('sink'); setTimeout(function(){ gh.remove(); }, 220); };
+    var pk = st.ids.filter(function(id){ return d.items[id] && d.items[id].pkg; });
+    if(pk.length && (drop.kind === 'desk' || drop.kind === 'folder')){ sink(); unhide(); dputBack(pk); st.ids = st.ids.filter(function(id){ return pk.indexOf(id) < 0; }); if(!st.ids.length) return; }   /* a removed app dragged out of the Trash goes back to Applications */
     if(drop.kind === 'trash'){ sink(); dtrash(st.ids); unhide(); return; }
     if(drop.kind === 'folder'){ sink(); var n = dmove(st.ids, drop.id); unhide(); if(n && drop.id === '' && !dview('icons')) dviewSet('icons', true); if(n){ var f = $('.dicon[data-id="'+drop.id+'"]', DLAYER); if(f){ f.classList.remove('flash'); void f.offsetWidth; f.classList.add('flash'); } } return; }
     if(drop.kind === 'dock'){ var added = [], at = dockGapIndex(); dockGapClear(true); st.ids.forEach(function(id){ var it = d.items[id]; if(it && it.kind === 'app' && !dockHas(it.app)){ dockPin(it.app, true, at >= 0 ? at++ : -1); added.push(APPS[it.app].title); } else if(it && it.kind === 'app'){ dockBounce(it.app); } });
@@ -3057,7 +3090,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(!DFOCUS || isPhone() || CTX.stack.length || DREN || $('.dlg-bg') || (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]'))) return;
     if(!root.contains(DFOCUS) || (DFOCUS !== DLAYER && !DFOCUS.isConnected)){ DFOCUS = null; return; }
     var ids = dselIds(DFOCUS), meta = e.metaKey || e.ctrlKey, inTrash = DFOCUS.classList && DFOCUS.classList.contains('trashw');
-    if(meta && (e.key === 'a' || e.key === 'A') && (DFOCUS === DLAYER ? dview('icons') : true)){ e.preventDefault(); $$('.dicon', DFOCUS).forEach(function(el){ el.classList.add('sel'); }); return; }
+    if(meta && (e.key === 'a' || e.key === 'A') && (DFOCUS === DLAYER ? dview('icons') : true)){ e.preventDefault(); $$('.dicon:not(.bye)', DFOCUS).forEach(function(el){ el.classList.add('sel'); }); return; }
     if(meta && !e.shiftKey && (e.key === 'i' || e.key === 'I')){ e.preventDefault(); var ff = DFOCUS.getAttribute && DFOCUS.getAttribute('data-folder'); infoShow(ids.length ? { type:'item', id:ids[0] } : ff === 'trash' ? { type:'trash' } : ff ? { type:'item', id:ff } : { type:'desk' }); return; }
     if(!ids.length) return;
     if(e.key === 'Enter' && !meta && ids.length === 1 && !inTrash){ e.preventDefault(); e.stopPropagation(); drename(ids[0]); return; }
@@ -3067,17 +3100,21 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   drender();
 /* tigOS core app.js, part 27: dock editing. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- the Dock: keep, remove, rearrange ----------------
-     Laid out like macOS: the kept (pinned) apps, then any app that is running without being kept (behind its own separator, the way
+     Laid out like macOS: Den at the far left (fixed, like the Finder; never kept, moved or removed), the kept (pinned) apps, then any app that is running without being kept (behind its own separator, the way
      recent apps sit), then a separator, the LinkedIn link and the Trash. The kept list is saved per user beside the desktop (DK().dock in
      27-desktop.js; absent means the default). Drag an icon along the dock to move it, drag it up and away to remove it (it goes in a puff
      of smoke), drop an app from the desktop to keep it. Right-click options live in 27-menus.js. */
   function dockDefault(){ var l = DOCK_ORDER.slice(); if(USER.name !== 'chase') l.splice(l.indexOf('terminal'), 0, 'games', 'pets'); return l; }   /* GreggyD and Ariel keep the Arcade and Pets beside the portfolio apps */
   function dockList(){
     var d = DK(), l = Array.isArray(d.dock) ? d.dock : dockDefault(), seen = {};
-    return l.filter(function(id){ if(seen[id] || !APPS[id] || APPS[id].sys || APPS[id].desk && isPhone()) return false; seen[id] = 1; return true; });   /* Jot or Den kept in the Dock stays off a phone's */
+    return l.filter(function(id){ if(seen[id] || id === 'den' || !APPS[id] || APPS[id].sys || appGone(id) || APPS[id].desk && isPhone()) return false; seen[id] = 1; return true; });   /* Jot kept in the Dock stays off a phone's; Den has its own fixed spot; a removed app waits for its reinstall */
   }
-  function dockSave(list){ var d = DK(); if(list.join() === dockDefault().join()) delete d.dock; else d.dock = list.slice(); deskSave(); }
-  function dockHas(app){ return dockList().indexOf(app) > -1; }
+  function dockSave(list){
+    var d = DK(), old = Array.isArray(d.dock) ? d.dock : dockDefault(); list = list.slice();
+    old.forEach(function(id, i){ if((appGone(id) || APPS[id] && APPS[id].desk && isPhone()) && list.indexOf(id) < 0) list.splice(Math.min(i, list.length), 0, id); });   /* a removed app keeps its place for when it comes back, and a phone's edit never drops Terminal or Jot */
+    if(list.join() === dockDefault().join()) delete d.dock; else d.dock = list; deskSave();
+  }
+  function dockHas(app){ return app === 'den' ? !isPhone() : dockList().indexOf(app) > -1; }
   function dockIcon(id, cls){
     var b = document.createElement('button'); b.className = 'dk '+cls; b.type = 'button';
     b.setAttribute('data-open', id); b.setAttribute('data-dock', id); b.setAttribute('aria-label', APPS[id].title);
@@ -3092,7 +3129,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     list.forEach(function(id){ var b = have[id]; delete have[id]; if(!b) b = dockIcon(id, 'pin'); b.classList.toggle('xtra', !!APPS[id].hidden); want.push(b); });
     Object.keys(have).forEach(function(k){ have[k].remove(); });
     $$('.dk.tmp', dock).forEach(function(b){ if(list.indexOf(b.getAttribute('data-dock')) > -1) b.remove(); });
-    var tsep = $('.sep.tmpsep', dock), order = want.concat(tsep ? [tsep] : [], $$('.dk.tmp', dock), [$('.sep.main', dock), $('a.dk', dock), $('.dk.trash', dock)]).filter(Boolean);
+    var tsep = $('.sep.tmpsep', dock), order = [$('.dk.denfix', dock), $('.sep.densep', dock)].concat(want, tsep ? [tsep] : [], $$('.dk.tmp', dock), [$('.sep.main', dock), $('a.dk', dock), $('.dk.trash', dock)]).filter(Boolean);
     order.forEach(function(n, i){ if(dock.children[i] !== n) dock.insertBefore(n, dock.children[i] || null); });
     updateChrome();
     trashLook();
@@ -3141,7 +3178,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var on = isPhone(); if(root.classList.contains('phone') === on) return;
     root.classList.toggle('phone', on); ctxClose(true);
     if(on) Object.keys(WM.wins).forEach(function(k){ if(APPS[k] && (APPS[k].sys || APPS[k].desk) && WM.wins[k]) close(WM.wins[k]); });
-    drender(); updateChrome(); dockFit();
+    dockBuild(); drender(); updateChrome();   /* the Dock gains or loses Terminal and Den (dockBuild fits it) */
   };
   if(phoneMQ.addEventListener) phoneMQ.addEventListener('change', phoneSync); else if(phoneMQ.addListener) phoneMQ.addListener(phoneSync);
   window.addEventListener('resize', phoneSync);
@@ -3149,8 +3186,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dockPop(app){ var b = $('#dock .dk.pin[data-dock="'+app+'"]'); if(!b) return; b.classList.remove('dk-in'); void b.offsetWidth; b.classList.add('dk-in'); setTimeout(function(){ b.classList.remove('dk-in'); }, 520); }
   /* Keep in Dock: at the end of the kept apps, or at a slot (a drop) */
   function dockPin(app, quiet, at){
-    if(!APPS[app] || APPS[app].sys) return false;
-    var l = dockList(); if(l.indexOf(app) > -1){ dockBounce(app); return false; }
+    if(!APPS[app] || APPS[app].sys || appGone(app)) return false;
+    var l = dockList(); if(l.indexOf(app) > -1 || app === 'den'){ dockBounce(app); return false; }
     if(!(at >= 0 && at <= l.length)) at = l.length;
     l.splice(at, 0, app); dockSave(l); dockBuild(); dockPop(app);
     if(!quiet) toast(APPS[app].title+' is in the Dock', isMobile() ? 'Hold it there for options.' : 'Drag it to move it, or right-click it for options.');
@@ -3175,7 +3212,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function loginHas(app){ return DK().login.indexOf(app) > -1; }
   function loginToggle(app){ var l = DK().login, i = l.indexOf(app); if(i > -1) l.splice(i, 1); else l.push(app); deskSave(); return i < 0; }
   function loginItems(){
-    var l = DK().login.filter(function(id){ return APPS[id] && !APPS[id].sys; }); if(!l.length) return;
+    var l = DK().login.filter(function(id){ return APPS[id] && !APPS[id].sys && !appGone(id) && !(APPS[id].desk && isPhone()); }); if(!l.length) return;
     if(isMobile()) l = l.slice(-1);   /* a phone shows one app at a time: the last one wins anyway */
     l.forEach(function(id, i){ setTimeout(function(){ if(loginEl.hidden && !root.classList.contains('booting') && !root.classList.contains('poweroff') && !WM.wins[id]) open(id, { from:$('#dock [data-dock="'+id+'"]') }); }, 700 + i*320); });
   }
@@ -3282,7 +3319,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   }
   $('#dock').addEventListener('pointerdown', function(e){
     if(e.button !== 0 || e.ctrlKey || e.pointerType === 'touch' || isMobile() || CTX.stack.length) return;
-    var b = e.target.closest('.dk'); if(!b || b.tagName === 'A' || b.classList.contains('trash') || !b.hasAttribute('data-dock') || b.classList.contains('gone')) return;
+    var b = e.target.closest('.dk'); if(!b || b.tagName === 'A' || b.classList.contains('trash') || b.classList.contains('denfix') || !b.hasAttribute('data-dock') || b.classList.contains('gone')) return;
     if(APPS[b.getAttribute('data-dock')] && APPS[b.getAttribute('data-dock')].sys) return;   /* folder, Info and Trash windows are not apps to keep */
     var sx = e.clientX, sy = e.clientY, st = null;
     var mv = function(ev){ if(!st){ if(Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 7) return; st = ddStart(b, sx, sy); } ev.preventDefault(); ddMove(st, ev); };
@@ -3399,7 +3436,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     return it;
   }
   /* New Note from the desktop, a folder or Den: saved there at once, then open to write in */
-  function jotNewIn(where, at){ if(isPhone()) return null; var it = jotCreate(where, at); if(!where) dflash(it.id); jotOpen(it.id); jotFocus(); return it; }
+  function jotNewIn(where, at){ if(isPhone()) return null; if(appGone('jot')){ open('jot'); return null; }   /* removed from Terminal: say so, make nothing */
+    var it = jotCreate(where, at); if(!where) dflash(it.id); jotOpen(it.id); jotFocus(); return it; }
   function jotOpen(id, from){
     if(isPhone()) return null;
     var it = id ? ditem(id) : null; if(id && !jlive(it)) return null;
@@ -3737,12 +3775,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   }
   function dduplicate(ids){
     var last = null; jotFlush();   /* a copy carries what was just typed */
-    ids.forEach(function(id){ var it = ditem(id); if(!it || it.in === 'trash') return; var where = dinside(it);
+    ids.forEach(function(id){ var it = ditem(id); if(!it || it.in === 'trash' || it.pkg) return; var where = dinside(it);
       var cp = function(x, nm, inn, t){ var y = dnew(x.kind === 'note' ? 'note' : 'app', { app:x.app, name:nm, in:inn, tag:x.tag, t:t || Date.now() }); if(x.kind === 'note'){ y.m = Date.now(); nbodySet(y.id, nbody(x.id)); } return y; };   /* a note's copy carries its text */
       var n = it.kind === 'folder' ? dnew('folder', { name:dnameNew(it.name+' copy', where), in:where, tag:it.tag }) : cp(it, it.kind === 'note' ? nnameNew(nsplit(it.name).base+' copy'+nsplit(it.name).ext, where) : dnameNew(it.name+' copy', where), where);
       if(it.kind === 'folder') dkids(id).forEach(function(k){ cp(k, k.name, n.id, k.t); });
       last = n; });
-    if(!last) return; deskSave(); drender(); if(!last.in) dflash(last.id);
+    if(!last) return null; deskSave(); drender(); if(!last.in) dflash(last.id);
+    return last;
   }
   /* Clean Up: pack the icons into the grid from the top right, keeping their order (or sorting them once, Clean Up By) */
   function dcleanUp(by){
@@ -3851,7 +3890,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       icons && (hero ? { t:'Hide Welcome Text', i:'eye-off', fn:function(){ dviewSet('hero', false); toast('Welcome text hidden', hideTip); } }
                      : { t:'Show Welcome Text', i:'eye', fn:function(){ dviewSet('hero', true); } }),
       '-',
-      { t:'Add to Desktop', i:'plus', sub:function(){ return VIS().concat(isPhone() ? [] : ['jot', 'den']).map(function(app){ return { t:APPS[app].title, i:APPS[app].icon, on:!!dalias(app), fn:function(){ daddApp(app); } }; }); } },
+      { t:'Add to Desktop', i:'plus', sub:function(){ return VIS().concat(isPhone() ? [] : ['jot', 'den'].filter(function(k){ return !appGone(k); })).map(function(app){ return { t:APPS[app].title, i:APPS[app].icon, on:!!dalias(app), fn:function(){ daddApp(app); } }; }); } },
       '-',
       saver,
       sets
@@ -3924,7 +3963,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   /* ---------- the Dock ---------- */
   CTX_MENUS.dock = function(tg){
     var b = tg.el, app = b.getAttribute('data-dock'), a = APPS[app]; if(!a) return null;
-    var w = WM.wins[app], pinned = b.classList.contains('pin'), top = topWin(true), sys = !!a.sys, items = [];
+    var w = WM.wins[app], pinned = b.classList.contains('pin'), fixed = b.classList.contains('denfix'), top = topWin(true), sys = !!a.sys, items = [];
     var bare = function(l){ return l.map(function(x){ var y = {}; Object.keys(x).forEach(function(k){ if(k !== 'i') y[k] = x[k]; }); return y; }); };   /* dock menus carry no icons, as on a Mac */
     if(isPhone()){   /* a phone keeps the Dock as it is: an app's quick actions (the resume, a case study), then open or close it, like iOS */
       if(sys) return null;
@@ -3939,8 +3978,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       return { items:items, anchor:b, src:b };
     }
     var acts = appActions(app); if(acts.length) items = items.concat(bare(acts), '-');
+    if(fixed) items.push({ t:'New Folder', fn:function(){ dnewFolder(null); } }, { t:'New Note', fn:function(){ jotNewIn(''); } }, '-');   /* Den: what the Finder's Dock menu offers */
     items.push({ t:'Options', sub:function(){ return [
-      w ? { t:'Keep in Dock', on:pinned, fn:function(){ if(pinned) dockUnpin(app); else dockPin(app); } } : null,
+      w && !fixed ? { t:'Keep in Dock', on:pinned, fn:function(){ if(pinned) dockUnpin(app); else dockPin(app); } } : null,
       { t:'Open at Login', on:loginHas(app), fn:function(){ var on = loginToggle(app); toast(on ? a.title+' will open at login' : a.title+' won\u2019t open at login', on ? 'Every time tigOS starts up on this device.' : ''); } },
       { t:dalias(app) ? 'Show on Desktop' : 'Add to Desktop', fn:function(){ daddApp(app); } },
       !w && pinned ? '-' : null,
@@ -3960,13 +4000,62 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       '-',
       { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'app', app:app }); } },
       { t:dalias(app) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:function(){ daddApp(app); } },
-      dockHas(app) ? { t:'Show in Dock', i:'dock', fn:function(){ dockBounce(app); } } : { t:'Add to Dock', i:'dock', fn:function(){ dockPin(app); } }
+      dockHas(app) ? { t:'Show in Dock', i:'dock', fn:function(){ dockBounce(app); } } : { t:'Add to Dock', i:'dock', fn:function(){ dockPin(app); } },
+      appRemovable(app) && '-',
+      appRemovable(app) && { t:'Move to Trash', i:'trash', fn:function(){ if(appRemove(app)) toast(a.title+' moved to the Trash', 'Put Back reinstalls it, or in Terminal: brew install '+app); } }
+    ] };
+  };
+  /* ---------- Jot: a note in its sidebar, the sidebar itself, and the text (Notes and TextEdit's menus) ---------- */
+  function jotRename(){ var w = WM.wins.jot, nm = w && $('.jot-name', w.body); if(!nm || nm.offsetParent === null) return; nm.focus(); try { nm.setSelectionRange(0, nsplit(nm.value).base.length); } catch(e){} }
+  CTX_MENUS.jot = function(tg){
+    var id = tg.el.getAttribute('data-note'), it = ditem(id); if(!jlive(it) || isPhone()) return null;
+    if(id !== JOT.id) jotLoad(id);   /* the row right-clicked becomes the open note, as in Notes */
+    var row = function(){ return $('.win[data-app="jot"] .jot-it[data-note="'+id+'"]'); }, moves = moveSub([id], dinside(it));
+    return { items:[
+      { t:'Rename', i:'pencil', fn:jotRename },
+      { t:'Duplicate', i:'copy', fn:function(){ var c = dduplicate([id]); if(c) jotLoad(c.id); } },
+      moves.length && { t:'Move To', i:'folder', sub:moves },
+      '-',
+      { t:'Download a Copy', i:'download', fn:function(){ jotDownload(id); } },
+      { t:'Send to Chase', i:'mail', fn:function(){ jotMail(id); } },
+      '-',
+      { t:'Show in Den', i:'den', fn:function(){ denOpen(dinside(it), id); } },
+      { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'item', id:id }); } },
+      { tags:it.tag || '', fn:function(v){ dtag([id], v); } },
+      '-',
+      { t:'Move to Trash', i:'trash', fn:function(){ dtrash([id]); } }
+    ], src:row() };
+  };
+  CTX_MENUS.jotside = function(){
+    if(isPhone()) return null;
+    return { items:[{ t:'New Note', i:'plus', fn:jotNewAsk }, { t:'Open a Text File\u2026', i:'upload', fn:function(){ var w = WM.wins.jot, f = w && $('.jot-file', w.body); if(f) f.click(); } }, '-', { t:'Show Notes in Den', i:'den', fn:function(){ denOpen('*notes'); } }] };
+  };
+  CTX_MENUS.jotdoc = function(tg){
+    var ta = tg.el, s = ta.selectionStart, e = ta.selectionEnd, has = e > s, id = JOT.id, mob = isMobile();
+    var back = function(f){ return function(){ try { ta.focus({ preventScroll:true }); } catch(x){ ta.focus(); } ta.setSelectionRange(s, e); f(); }; };   /* the menu took the focus: give the text its caret back, then act */
+    var paste = function(){ var put = function(v){ if(v) jput(ta, s, e, v, s + v.length); }; try { navigator.clipboard.readText().then(put, function(){ toast('Press \u2318V to paste', 'This browser keeps the clipboard to the keyboard.'); }); } catch(x){ toast('Press \u2318V to paste', 'This browser keeps the clipboard to the keyboard.'); } };
+    return { items:[
+      { t:'Cut', k:mob ? '' : '\u2318X', dis:!has, fn:back(function(){ var v = ta.value.slice(s, e), ok = false; try { ok = document.execCommand('cut'); } catch(x){} if(!ok){ try { navigator.clipboard.writeText(v); } catch(x){} jput(ta, s, e, '', s); } }) },
+      { t:'Copy', k:mob ? '' : '\u2318C', dis:!has, fn:back(function(){ var ok = false; try { ok = document.execCommand('copy'); } catch(x){} if(!ok){ try { navigator.clipboard.writeText(ta.value.slice(s, e)); } catch(x){} } }) },
+      { t:'Paste', k:mob ? '' : '\u2318V', fn:back(paste) },
+      { t:'Select All', k:mob ? '' : '\u2318A', fn:back(function(){ ta.select(); }) },
+      '-',
+      { t:'Bold', i:'bold', k:mob ? '' : '\u2318B', fn:back(function(){ jwrap(ta, '**'); }) },
+      { t:'Italic', i:'italic', k:mob ? '' : '\u2318I', fn:back(function(){ jwrap(ta, '_'); }) },
+      { t:'Heading', i:'head', fn:back(function(){ jprefix(ta, 'head'); }) },
+      { t:'Bulleted List', i:'list', fn:back(function(){ jprefix(ta, 'list'); }) },
+      { t:'Checklist', i:'check', fn:back(function(){ jprefix(ta, 'check'); }) },
+      { t:'Add Link', i:'link', k:mob ? '' : '\u2318K', fn:back(function(){ jlink(ta); }) },
+      '-',
+      { t:'Preview', i:'eye', fn:function(){ JOT.prev = true; jotPrev(); } },
+      { t:'New Note', i:'plus', fn:jotNewAsk },
+      id && { t:'Download a Copy', i:'download', fn:function(){ jotDownload(id); } }
     ] };
   };
   CTX_MENUS.trash = function(tg){
     if(isPhone()) return null;
     var n = dtrashed().length;
-    return { items:[{ t:'Open', fn:function(){ open('trash', { from:tg.el }); } }, '-', { t:'Empty Trash', dis:!n, fn:demptyAsk }], anchor:tg.el, src:tg.el };
+    return { items:[{ t:'Open', fn:function(){ denOpen('trash'); } }, '-', { t:'Empty Trash', dis:!n, fn:demptyAsk }], anchor:tg.el, src:tg.el };
   };
   CTX_MENUS.link = function(tg){
     var url = TIG.contact.linkedin;
@@ -4006,7 +4095,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       '-',
       acts.length && { t:'Quick Actions', i:'skills', sub:acts },
       info && { t:'Get Info', i:'info', fn:function(){ infoShow(info); } },
-      !a.sys && !phone && { t:'Keep in Dock', i:'dock', on:dockHas(id), fn:function(){ if(dockHas(id)) dockUnpin(id); else dockPin(id); } },
+      !a.sys && !phone && id !== 'den' && { t:'Keep in Dock', i:'dock', on:dockHas(id), fn:function(){ if(dockHas(id)) dockUnpin(id); else dockPin(id); } },
       !a.sys && !phone && { t:dalias(id) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:function(){ daddApp(id); } },
       '-',
       others.length && { t:'Close Other Windows', fn:function(){ others.forEach(function(k){ if(WM.wins[k]) close(WM.wins[k]); }); } },
@@ -4083,6 +4172,438 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   EXTRA_CMDS.fps = function(a, T){ var off = /^(off|stop|no|hide|0)$/i.test((a || '').trim()); var show = DBG.fps(off ? false : (/^(on|show|1)$/i.test((a || '').trim()) ? true : undefined)); T.print(show ? 'fps counter on, top right. '+T.o('fps')+' again turns it off.' : 'fps counter off.', 'ok'); };
   EXTRA_CMDS.debug = function(a, T){ var off = /^(off|stop|no|hide|close|0)$/i.test((a || '').trim()); var show = DBG.debug(off ? false : (/^(on|show|1)$/i.test((a || '').trim()) ? true : undefined)); T.print(show ? 'debug overlay on: frames, main thread, memory, network, device and tigOS state, live. '+T.o('debug')+' again or its \u00d7 closes it.' : 'debug overlay off.', 'ok'); };
   EXTRA_CMDS.perf = function(a, T){ EXTRA_CMDS.debug(a, T); }; EXTRA_CMDS.top = function(a, T){ EXTRA_CMDS.debug(a, T); }; EXTRA_CMDS.htop = function(a, T){ EXTRA_CMDS.debug(a, T); };
+/* tigOS core app.js, part 27: the shell. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
+  /* ---------------- the shell: Terminal's files and apps ----------------
+     Terminal works on the same items as the desktop and Den (27-desktop.js). ~ is home: the apps (about.app and the rest), resume.pdf and
+     whatever sits on the Desktop, its folders and notes (~/Desktop is the same place). A folder is a directory one level down: it holds
+     notes and app aliases, never another folder, as on the desktop. ~/Applications lists every installed app and ~/.Trash is the Trash.
+     Notes are the text files: touch and echo > make them, cat, head, tail, wc and grep read them, nano or vim opens one in Jot, mv renames
+     or moves, cp copies, ln -s makes an app alias, rm moves things to the Trash (rm inside ~/.Trash erases for good). An app can be removed
+     (brew uninstall about, rm about.app, or Move to Trash in Den): it waits in the Trash, its Dock icon and aliases hide, and brew install
+     (or Put Back) brings it back where it was. Terminal, Settings and Den stay. Terminal is a desktop and tablet app: a phone has none. */
+  var APP_CORE = { terminal:1, settings:1, den:1 };   /* tigOS itself (and who would type brew install with no Terminal?) */
+  function appGone(id){ try { var d = typeof DESKS === 'object' && DESKS && DESKS[USER.name]; return !!(d && Array.isArray(d.gone) && d.gone.indexOf(id) > -1); } catch(e){ return false; } }   /* called before the desktop store loads, so it never assumes it */
+  function appPkg(id){ var d = DK(); for(var k in d.items){ var it = d.items[k]; if(it.pkg && it.app === id && it.in === 'trash') return it; } return null; }
+  function appsInstalled(){ return VIS().concat(['jot', 'den'].filter(function(k){ return !appGone(k); })); }
+  function appRemovable(id){ var a = APPS[id]; return !!a && !isPhone() && !a.sys && !APP_CORE[id] && (!a.hidden || id === 'jot') && !appGone(id); }
+  function appRemove(id){
+    if(!appRemovable(id)) return false;
+    var d = DK(); if(!Array.isArray(d.gone)) d.gone = [];
+    var w = WM.wins[id]; if(w) close(w);
+    d.gone.push(id);
+    dnew('app', { app:id, name:APPS[id].title, in:'trash', pkg:1, t2:Date.now(), from:'' });   /* the app itself, waiting in the Trash */
+    deskSave(); dockBuild(); drender(); trashGulp();
+    return true;
+  }
+  function appInstall(id, quiet){
+    var d = DK(); if(!APPS[id] || !appGone(id)) return false;
+    d.gone = d.gone.filter(function(x){ return x !== id; }); if(!d.gone.length) delete d.gone;
+    Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(it.pkg && it.app === id) delete d.items[k]; });
+    deskSave(); dockBuild(); dockPop(id); drender();
+    if(!quiet) toast(APPS[id].title+' is back', dockHas(id) ? 'In the Dock, where it was.' : 'Find it in Spotlight or Den.');
+    return true;
+  }
+  /* the file commands, installed over Terminal's own (13-pets.js) each time a Terminal opens. k: print, o, refresh (the prompt) */
+  function shellInstall(CMD, k){
+    var print = k.print, o = k.o;
+    var S = { cwd:'', prev:'' };   /* '' home, a folder id, '*apps' or 'trash' */
+    var H = function(){ return USERS[USER.name].home; };
+    var okDir = function(l){ if(l === '' || l === '*apps' || l === 'trash') return true; var f = ditem(l); return !!(f && f.kind === 'folder' && (f.in || '') === ''); };
+    var here = function(){ if(!okDir(S.cwd)) S.cwd = ''; return S.cwd; };
+    var dirName = function(l){ return l === '' ? '~' : l === '*apps' ? 'Applications' : l === 'trash' ? '.Trash' : ditem(l).name; };
+    var dirPath = function(l){ return l === '' ? '~' : l === '*apps' ? '/Applications' : l === 'trash' ? '~/.Trash' : '~/'+ditem(l).name; };
+    var abs = function(l){ return l === '*apps' ? '/Applications' : H()+(l === '' ? '' : l === 'trash' ? '/.Trash' : '/'+ditem(l).name); };
+    var err = function(s){ print(esc(s), 'err'); };
+    var dim = function(s){ print(esc(s), 'dim'); };
+    var q = function(n){ return /[\s"'\\]/.test(n) ? '"'+n.replace(/"/g, '\\"')+'"' : n; };   /* a name the way you would type it */
+    var plural = function(n, w){ return n+' '+w+(n === 1 ? '' : 's'); };
+    /* words, with "quotes", 'quotes' and back\ slashes; flags (-rf) apart, until -- */
+    var toks = function(s){ var out = [], re = /"((?:\\.|[^"\\])*)"|'([^']*)'|((?:\\.|[^\s"'])+)/g, m; s = String(s || ''); while((m = re.exec(s))){ if(m[1] != null) out.push({ v:m[1].replace(/\\(.)/g, '$1'), q:true }); else if(m[2] != null) out.push({ v:m[2], q:true }); else out.push({ v:m[3].replace(/\\(.)/g, '$1'), q:false }); } return out; };
+    var parse = function(s){ var f = {}, a = [], end = false; toks(s).forEach(function(x){ if(!end && !x.q && x.v === '--'){ end = true; return; } if(!end && !x.q && /^-[a-zA-Z]+$/.test(x.v)){ x.v.slice(1).split('').forEach(function(c){ f[c] = true; }); return; } a.push(x.v); }); return { f:f, a:a }; };
+    /* what a directory holds, as the shell names it: apps are id.app, folders and notes keep their names */
+    var ent = function(it){ return { name:it.pkg ? it.app+'.app' : it.name, kind:it.pkg ? 'pkg' : it.kind === 'app' ? 'alias' : it.kind, it:it, app:it.app }; };
+    var entries = function(l){
+      if(l === '*apps') return appsInstalled().map(function(a){ return { name:a+'.app', kind:'app', app:a }; });
+      if(l === 'trash') return dtrashed().sort(function(a, b){ return (b.t2 || 0) - (a.t2 || 0); }).map(ent);
+      if(l === '') return VIS().map(function(a){ return { name:a+'.app', kind:'app', app:a }; }).concat([{ name:'resume.pdf', kind:'pdf' }], ditems('').filter(function(x){ return x.kind !== 'app'; }).sort(dcmp('name')).map(ent));
+      return dkids(l).sort(dcmp('name')).map(ent);
+    };
+    var appOf = function(n){ n = String(n || '').toLowerCase().replace(/\.app$/, ''); var ks = Object.keys(APPS).filter(function(x){ return !APPS[x].sys; }); return ks.filter(function(x){ return x === n; })[0] || ks.filter(function(x){ return APPS[x].title.toLowerCase() === n; })[0] || null; };
+    var findIn = function(l, name){
+      var n = String(name).toLowerCase(), es = entries(l);
+      return es.filter(function(e){ return e.name.toLowerCase() === n; })[0] || es.filter(function(e){ return e.kind === 'note' && nsplit(e.name.toLowerCase()).base === n; })[0] ||
+        ((l === '' || l === '*apps') && es.filter(function(e){ return e.kind === 'app' && e.app === appOf(n); })[0]) || es.filter(function(e){ return e.kind === 'pkg' && e.app === appOf(n); })[0] || null;
+    };
+    /* a path to { dir } when it names a directory, else { loc (its directory), name, e (what is there, or null) }, or { err } */
+    var walk = function(p){
+      p = String(p == null ? '' : p); var h = H();
+      if(p === h || p.indexOf(h+'/') === 0) p = '~'+p.slice(h.length);
+      var segs = p.split('/'), l = here();
+      if(segs[0] === '~' || (segs[0] === '' && segs.length > 1)){ l = ''; segs.shift(); }
+      segs = segs.filter(function(s){ return s !== '' && s !== '.'; });
+      for(var j = 0; j < segs.length; j++){
+        var s = segs[j], last = j === segs.length - 1;
+        if(s === '..' || s === '~'){ l = ''; continue; }   /* one level deep: up is always home */
+        var e = findIn(l, s);
+        if(e && e.kind === 'folder' && l !== 'trash'){ l = e.it.id; continue; }
+        if(!e && l === ''){ if(/^desktop$/i.test(s)) continue; if(/^applications$/i.test(s)){ l = '*apps'; continue; } if(/^\.?trash$/i.test(s)){ l = 'trash'; continue; } }
+        if(last) return { loc:l, name:s, e:e };
+        return { err:e ? 'Not a directory' : 'No such file or directory' };
+      }
+      return { dir:l };
+    };
+    /* like walk, but a folder is an item too (rm, mv, cp, open act on it); special: home, Applications or the Trash themselves */
+    var at = function(t){ var r = walk(t); if(r.dir != null){ if(r.dir === '' || r.dir === '*apps' || r.dir === 'trash') return { r:r, special:r.dir }; var f = ditem(r.dir); return { r:r, e:{ name:f.name, kind:'folder', it:f }, loc:'' }; } return { r:r, e:r.e || null, loc:r.loc }; };
+    var writable = function(l, cmd, t){ if(l === '*apps' || l === 'trash'){ err(cmd+': '+t+': Permission denied'+(l === 'trash' ? ' (the Trash only takes what you throw away)' : '')); return false; } return true; };
+    var go = function(l){ if(l !== S.cwd) S.prev = S.cwd; S.cwd = l; };
+    var setBody = function(it, v){
+      nbodySet(it.id, v); it.m = Date.now(); deskSave();
+      var w = WM.wins.jot; if(w && JOT.id === it.id){ var ta = $('.jot-text', w.body); if(ta) ta.value = v; jotFoot(); jotPrev(); }   /* the note open in Jot shows it at once */
+      drender();
+    };
+    var notesIn = function(l, deep){ if(l === '*apps') return []; var own = (l === 'trash' ? dtrashed() : ditems(l)).filter(function(x){ return x.kind === 'note'; }); if(deep && l === '') ditems('').filter(function(x){ return x.kind === 'folder'; }).forEach(function(f){ own = own.concat(dkids(f.id).filter(function(x){ return x.kind === 'note'; })); }); return own; };
+    var rel = function(it){ var w = it.in || ''; return w === here() ? it.name : (w === 'trash' ? '~/.Trash/' : w ? '~/'+ditem(w).name+'/' : '~/')+it.name; };
+    var bytes = function(s){ try { return new Blob([s]).size; } catch(e){ return String(s).length; } };
+    var when = function(t){ var d = new Date(t || Date.now()); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]+' '+String(d.getDate()).padStart(2, ' ')+' '+String(d.getHours()).padStart(2, '0')+':'+String(d.getMinutes()).padStart(2, '0'); };
+    var tok = function(e){ var n = esc(q(e.name)); return e.kind === 'folder' || e.kind === 'dot' ? o(n+'/') : n; };
+    var lsLine = function(e){
+      var it = e.it, kids = e.kind === 'folder' ? dkids(it.id).length : 0;
+      var perm = e.kind === 'note' || e.kind === 'pdf' ? '-rw-r--r--' : e.kind === 'alias' ? 'lrwxr-xr-x' : 'drwxr-xr-x';
+      var size = e.kind === 'note' ? bytes(nbody(it.id)) : e.kind === 'pdf' ? 117396 : e.kind === 'folder' ? 64 + kids*32 : e.kind === 'alias' ? 32 : 4096;
+      var date = it ? when(it.m || it.t) : 'Sep  3 14:00';
+      return perm+'  '+esc(USER.name)+'  staff  '+String(size).padStart(7, ' ')+'  '+date+'  '+tok(e)+(e.kind === 'alias' ? ' -&gt; /Applications/'+esc(e.app)+'.app' : '');
+    };
+    var gone = function(){ return (DK().gone || []).filter(function(a){ return APPS[a]; }); };
+    var C = {};
+    C.pwd = function(){ print(esc(abs(here()))); };
+    C.cd = function(arg){
+      var P = parse(arg), t = P.a[0];
+      if(t == null || t === '~'){ go(''); return; }
+      if(t === '-'){ go(okDir(S.prev) ? S.prev : ''); print(esc(dirPath(here()))); return; }
+      var r = walk(t);
+      if(r.dir != null){ go(r.dir); return; }
+      err('cd: '+(r.e ? 'not a directory' : 'no such file or directory')+': '+t);
+    };
+    C.ls = function(arg){
+      var P = parse(arg), f = P.f, ts = P.a.length ? P.a : [null];
+      ts.forEach(function(t){
+        var r = t == null ? { dir:here() } : walk(t);
+        if(r.err || (r.dir == null && !r.e)){ err('ls: '+t+': No such file or directory'); return; }
+        var list = r.dir != null ? entries(r.dir) : [r.e];
+        if(f.a && r.dir != null) list = [{ name:'.', kind:'dot' }, { name:'..', kind:'dot' }].concat(r.dir === '' ? [{ name:'.Trash', kind:'dot' }] : [], list);
+        if(ts.length > 1 && r.dir != null) print(esc(t)+':', 'dim');
+        if(f.l){ var n = list.filter(function(e){ return e.kind !== 'dot'; }).length; print('total '+n+(list.length ? '\n'+list.map(lsLine).join('\n') : '')); }
+        else print(list.map(tok).join(f['1'] ? '\n' : '  '));
+      });
+    };
+    C.tree = function(arg){
+      var t = parse(arg).a[0], r = t == null ? { dir:here() } : walk(t);
+      if(r.dir == null){ err('tree: '+t+' [error opening dir]'); return; }
+      var out = [r.dir === '' ? '.' : esc(q(dirName(r.dir)))], nd = 0, nf = 0;
+      var draw = function(list, pre){ list.forEach(function(e, i){ var end = i === list.length - 1; out.push(pre+(end ? '\u2514\u2500\u2500 ' : '\u251c\u2500\u2500 ')+tok(e)); if(e.kind === 'folder' && r.dir !== 'trash'){ nd++; draw(entries(e.it.id), pre+(end ? '    ' : '\u2502   ')); } else nf++; }); };
+      draw(entries(r.dir), '');
+      print(out.join('\n')+'\n\n'+(nd === 1 ? '1 directory' : nd+' directories')+', '+plural(nf, 'file'));
+    };
+    C.find = function(arg){
+      var ts = toks(arg).map(function(x){ return x.v; }), start = null, pat = null, glob = false;
+      for(var i = 0; i < ts.length; i++){ if(/^-i?name$/.test(ts[i])){ pat = ts[++i] || ''; glob = true; } else if(start == null && pat == null && walk(ts[i]).dir != null && !/resume/i.test(ts[i])) start = ts[i]; else if(pat == null) pat = ts[i]; }
+      var r = start == null ? { dir:here() } : walk(start), base = start == null ? '.' : start.replace(/\/+$/, ''), paths = [];
+      var add = function(l, pre){ entries(l).forEach(function(e){ paths.push({ p:pre+'/'+q(e.name), n:e.name }); if(e.kind === 'folder' && l !== 'trash') add(e.it.id, pre+'/'+q(e.name)); }); };
+      add(r.dir, base);
+      if(pat){ var re; if(glob){ re = new RegExp('^'+pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')+'$', 'i'); } paths = paths.filter(function(x){ return glob ? re.test(x.n) : x.n.toLowerCase().indexOf(pat.toLowerCase()) > -1; }); }
+      if(paths.length) print(paths.map(function(x){ return esc(x.p); }).join('\n')); else dim('find: nothing matches '+(pat || ''));
+    };
+    C.mkdir = function(arg){
+      var P = parse(arg), made = 0; if(!P.a.length){ print('usage: mkdir [-p] directory ...'); return; }
+      P.a.forEach(function(t){
+        var r = walk(t);
+        if(r.err){ err('mkdir: '+t+': No such file or directory'); return; }
+        if(r.dir != null || r.e){ if(!P.f.p) err('mkdir: '+t+': File exists'); return; }
+        if(r.loc !== ''){ err('mkdir: '+t+': '+(r.loc === 'trash' || r.loc === '*apps' ? 'Permission denied' : 'folders sit on the Desktop, one level deep. try it from ~')); return; }
+        var n = r.name.replace(/[\/\\:]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 60); if(!n || n === '..'){ err('mkdir: '+t+': Invalid argument'); return; }
+        dnew('folder', { name:n }); made++;
+      });
+      if(made){ delete DK().view.icons; deskSave(); drender(); }
+    };
+    C.touch = function(arg){
+      var P = parse(arg); if(!P.a.length){ print('usage: touch file ...'); return; }
+      P.a.forEach(function(t){
+        var r = walk(t);
+        if(r.err){ err('touch: '+t+': No such file or directory'); return; }
+        if(r.dir != null) return;
+        if(r.e){ if(r.e.kind === 'note'){ r.e.it.m = Date.now(); deskSave(); drender(); } return; }
+        if(!writable(r.loc, 'touch', t)) return;
+        jotCreate(r.loc, null, '', r.name);
+      });
+    };
+    /* echo words, echo words > file (replaces it), echo words >> file (adds a line) */
+    var echo0 = CMD.echo;
+    C.echo = function(arg){
+      var s = String(arg || ''), qc = '', i, cut = -1;
+      for(i = 0; i < s.length; i++){ var c = s.charAt(i); if(qc){ if(c === qc) qc = ''; continue; } if(c === '"' || c === "'"){ qc = c; continue; } if(c === '>'){ cut = i; break; } }
+      if(cut < 0){ echo0(arg); return; }
+      var add = s.charAt(cut + 1) === '>', file = toks(s.slice(cut + (add ? 2 : 1))).map(function(x){ return x.v; })[0];
+      var text = s.slice(0, cut).trim().replace(/^-[ne]+\s+/, '').replace(/"((?:\\.|[^"\\])*)"|'([^']*)'/g, function(m0, a, b){ return a != null ? a.replace(/\\"/g, '"') : b; }).replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+      if(!file){ err('zsh: parse error near `\\n\''); return; }
+      var r = walk(file);
+      if(r.err){ err('zsh: no such file or directory: '+file); return; }
+      if(r.dir != null){ err('zsh: is a directory: '+file); return; }
+      if(!writable(r.loc, 'zsh', file)) return;
+      if(r.e && r.e.kind !== 'note'){ err('zsh: permission denied: '+file); return; }
+      if(r.e){ jotFlush(); var cur = nbody(r.e.it.id); setBody(r.e.it, add ? cur+(cur && !/\n$/.test(cur) ? '\n' : '')+text : text); return; }
+      jotCreate(r.loc, null, text, r.name);
+    };
+    var cat0 = CMD.cat;
+    C.cat = function(arg){
+      var P = parse(arg); if(!P.a.length){ print('usage: cat file ...'); return; }
+      P.a.forEach(function(t){
+        if(/\.env|passwd|shadow/.test(t)){ err('cat: '+t+': permission denied. nice try though.'); return; }
+        var x = at(t), e = x.e;
+        if(x.special != null || (e && e.kind === 'folder')){ err('cat: '+t+': Is a directory'); return; }
+        if(e && e.kind === 'note'){ jotFlush(); var b = nbody(e.it.id); print(b ? esc(b) : '<span class="dim">('+esc(e.name)+' is empty)</span>'); return; }
+        if((e && e.kind === 'pdf') || (!e && /resume/i.test(t))){ cat0('resume'); return; }
+        if(e){ print('cat: '+esc(t)+': is an app. try '+o('open '+esc(e.app)), 'err'); return; }
+        var nt = jnoteNamed(t); if(nt){ jotFlush(); print(esc(nbody(nt.id)) || '<span class="dim">('+esc(nt.name)+' is empty)</span>'); return; }   /* a note by name from anywhere, as before */
+        err('cat: '+t+': No such file or directory');
+      });
+    };
+    var part = function(arg, end, old){
+      var P = parse(arg), n = 10, a = P.a.slice(), cmd = end ? 'tail' : 'head';
+      if(P.f.n && /^\d+$/.test(a[0] || '')) n = +a.shift();
+      a = a.filter(function(x){ var m = /^-(\d+)$/.exec(x); if(m){ n = +m[1]; return false; } return true; });
+      if(!a.length){ old(arg); return; }
+      a.forEach(function(t){
+        var x = at(t), e = x.e;
+        if(!(e && e.kind === 'note')){ if((e && e.kind === 'pdf') || (!e && /resume/i.test(t))) old('resume'); else err(cmd+': '+t+': '+(x.special != null || (e && e.kind === 'folder') ? 'Is a directory' : 'No such file or directory')); return; }
+        jotFlush(); var L = nbody(e.it.id).split('\n'), out = end ? L.slice(Math.max(0, L.length - n)) : L.slice(0, n);
+        if(a.length > 1) dim('==> '+e.name+' <==');
+        print(esc(out.join('\n')));
+      });
+    };
+    var head0 = CMD.head, tail0 = CMD.tail, wc0 = CMD.wc, grep0 = CMD.grep;
+    C.head = function(a){ part(a, false, head0); }; C.tail = function(a){ part(a, true, tail0); };
+    C.wc = function(arg){
+      var P = parse(arg); if(!P.a.length){ wc0(arg); return; }
+      P.a.forEach(function(t){ var x = at(t), e = x.e; if(!(e && e.kind === 'note')){ if((e && e.kind === 'pdf') || (!e && /resume/i.test(t))) wc0('resume'); else err('wc: '+t+': '+(x.special != null || (e && e.kind === 'folder') ? 'read: Is a directory' : 'open: No such file or directory')); return; }
+        jotFlush(); var b = nbody(e.it.id); print([(b.match(/\n/g) || []).length, nwords(b), bytes(b)].map(function(v){ return String(v).padStart(8, ' '); }).join('')+' '+esc(e.name)); });
+    };
+    var mark = function(line, re){ var g = new RegExp(re.source, re.flags.replace('g', '')+'g'), out = '', last = 0, m; while((m = g.exec(line))){ if(!m[0].length){ g.lastIndex++; continue; } out += esc(line.slice(last, m.index))+o(esc(m[0])); last = m.index + m[0].length; } return out+esc(line.slice(last)); };
+    C.grep = function(arg){
+      var P = parse(arg), pat = P.a[0], files = P.a.slice(1), re, list = [];
+      if(pat == null){ print('usage: grep [-i] [-n] [-l] [-r] pattern [file ...]'); return; }
+      try { re = new RegExp(pat, P.f.i ? 'i' : ''); } catch(e){ re = new RegExp(pat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), P.f.i ? 'i' : ''); }
+      jotFlush();
+      if(files.length) files.forEach(function(t){ var x = at(t), e = x.e; if(x.special != null || (e && e.kind === 'folder')){ if(P.f.r || P.f.R) list = list.concat(notesIn(x.special != null ? x.special : e.it.id, true)); else err('grep: '+t+': Is a directory'); return; } if(e && e.kind === 'note') list.push(e.it); else if(!e || e.kind !== 'pdf') err('grep: '+t+': No such file or directory'); });
+      else list = notesIn(here(), true);
+      var many = !files.length || list.length > 1, hits = 0, out = [];
+      list.forEach(function(it){ var any = false; nbody(it.id).split('\n').forEach(function(l, i){ if(!re.test(l)) return; hits++; if(P.f.l){ any = true; return; } if(out.length < 200) out.push((many ? '<span class="dim">'+esc(rel(it))+':</span>' : '')+(P.f.n ? '<span class="dim">'+(i + 1)+':</span>' : '')+mark(l, re)); }); if(P.f.l && any) out.push(esc(rel(it))); });
+      if(out.length) print(out.join('\n'));
+      else if(!files.length && !list.length) grep0(pat);   /* no notes to search: the old line */
+      else dim('(no matches)');
+    };
+    /* rm: to the Trash, and inside ~/.Trash for good. rmdir: an empty folder only */
+    var refuse = function(){ print('rm: refusing to remove everything. Chase worked hard on this.', 'err'); toast('Phew', 'rm -rf / has been politely declined.'); };
+    var rmAll = function(arg, cmd){
+      var P = parse(arg), a = P.a, deep = P.f.r || P.f.R, h = H();
+      if(/\*/.test(arg || '') || a.some(function(t){ return /^(\/+|~\/?|\.\.?\/?|\/?desktop\/?|~\/desktop\/?)$/i.test(t) || t === h || t === h+'/'; })){ refuse(); return; }
+      if(!a.length){ print('usage: '+cmd+(cmd === 'rm' ? ' [-r] file ...' : ' directory ...')); return; }
+      var bin = [], erase = [], apps = [];
+      a.forEach(function(t){
+        var x = at(t), e = x.e;
+        if(x.special != null){ err(cmd+': '+t+': '+(x.special === 'trash' ? 'the Trash stays. empty erases what is in it' : 'Permission denied')); return; }
+        if(!e){ if(!P.f.f) err(cmd+': '+t+': No such file or directory'); return; }
+        if(e.kind === 'pdf'){ err(cmd+': resume.pdf: Operation not permitted. it is the whole point.'); return; }
+        if(cmd === 'rmdir' && e.kind !== 'folder'){ err('rmdir: '+t+': Not a directory'); return; }
+        if(e.kind === 'app'){
+          if(appRemovable(e.app)){ appRemove(e.app); apps.push(e.app); }
+          else err(cmd+': '+e.name+': '+(e.app === 'terminal' ? 'Terminal can\u2019t remove itself' : APPS[e.app].title+' is part of tigOS'));
+          return;
+        }
+        if(e.kind === 'folder' && x.r.dir != null && cmd === 'rm' && !deep && !(P.f.d && !dkids(e.it.id).length)){ err('rm: '+t+': is a directory'); return; }
+        if(e.kind === 'folder' && cmd === 'rmdir' && dkids(e.it.id).length){ err('rmdir: '+t+': Directory not empty'); return; }
+        (x.loc === 'trash' ? erase : bin).push(e.it);
+      });
+      if(bin.length){ dtrash(bin.map(function(it){ return it.id; })); dim('moved '+bin.map(function(it){ return q(it.name); }).join(', ')+' to the Trash'); }
+      if(erase.length){ derase(erase.map(function(it){ return it.id; })); dim('erased '+erase.map(function(it){ return q(it.pkg ? it.app+'.app' : it.name); }).join(', ')+' for good'); }
+      if(apps.length) print('moved '+apps.map(function(x){ return esc(x)+'.app'; }).join(', ')+' to the Trash. '+o('brew install '+esc(apps[0]))+' or Put Back brings '+(apps.length === 1 ? 'it' : 'them')+' back');
+    };
+    C.rm = function(a){ rmAll(a, 'rm'); }; C.rmdir = function(a){ rmAll(a, 'rmdir'); };
+    var cleanName = function(it, n){ return it.kind === 'note' ? nname(n) : String(n).replace(/[\/\\:]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 60); };
+    /* mv: into a directory, or to a new name (and place); never over something that is there */
+    C.mv = function(arg){
+      var P = parse(arg), a = P.a; if(a.length < 2){ print('usage: mv source ... target'); return; }
+      var dst = a[a.length - 1], D = walk(dst), into = D.dir != null ? D.dir : null;
+      if(a.length > 2 && into == null){ err('mv: '+dst+' is not a directory'); return; }
+      a.slice(0, -1).forEach(function(s){
+        var x = at(s), e = x.e; if(x.special != null){ err('mv: '+s+': Permission denied'); return; }
+        if(!e){ err('mv: '+s+': No such file or directory'); return; }
+        var it = e.it;
+        if(e.kind === 'app' || e.kind === 'pdf'){ err('mv: '+e.name+': Operation not permitted. ln -s makes an alias instead'); return; }
+        if(e.kind === 'pkg' && into !== 'trash'){ err('mv: '+e.name+': '+o('restore')+' puts an app back'); return; }
+        if(into != null){
+          if(into === '*apps'){ err('mv: Applications: Permission denied'); return; }
+          if(into === it.id){ err('mv: '+s+' and '+dst+' are the same folder'); return; }
+          if(into === 'trash'){ dtrash([it.id]); return; }
+          if(it.kind === 'folder' && into !== ''){ err('mv: '+s+': folders can\u2019t go inside folders'); return; }
+          if(it.in === 'trash') dputBack([it.id]);
+          if((it.in || '') !== into) dmove([it.id], into);
+          return;
+        }
+        if(D.err){ err('mv: '+dst+': No such file or directory'); return; }
+        if(D.e && D.e.it !== it){ err('mv: '+dst+': File exists. rm it first'); return; }
+        if(D.loc === '*apps' || D.loc === 'trash'){ err('mv: '+dst+': Permission denied'); return; }
+        if(it.kind === 'folder' && D.loc !== ''){ err('mv: '+s+': folders can\u2019t go inside folders'); return; }
+        var nn = cleanName(it, D.name); if(!nn){ err('mv: '+dst+': Invalid argument'); return; }
+        if(!dnameFree(nn, D.loc, it.id)){ err('mv: '+nn+': File exists'); return; }
+        if(it.in === 'trash') dputBack([it.id]);
+        if((it.in || '') !== D.loc) dmove([it.id], D.loc);
+        it.name = nn; delete it.auto; deskSave(); drender(); winTitles();
+      });
+    };
+    /* links and copies: an app becomes an alias, a note a new note, a folder (cp -r) a new folder with copies inside */
+    var lnTo = function(app, l, t){
+      if(l === '*apps' || l === 'trash'){ err('ln: '+t+': Permission denied'); return false; }
+      if(l === ''){ daddApp(app, true); return true; }
+      if(dkids(l).some(function(x){ return x.kind === 'app' && x.app === app; })){ err('ln: '+APPS[app].title+': File exists'); return false; }
+      dnew('app', { app:app, name:dnameNew(APPS[app].title, l), in:l }); deskSave(); drender(); return true;
+    };
+    C.cp = function(arg){
+      var P = parse(arg), a = P.a; if(a.length < 2){ print('usage: cp [-r] source ... target'); return; }
+      var dst = a[a.length - 1], D = walk(dst), into = D.dir != null ? D.dir : null;
+      if(a.length > 2 && into == null){ err('cp: '+dst+' is not a directory'); return; }
+      a.slice(0, -1).forEach(function(s){
+        var x = at(s), e = x.e; if(x.special != null){ err('cp: '+s+' is a directory (not copied)'); return; }
+        if(!e){ err('cp: '+s+': No such file or directory'); return; }
+        if(e.kind === 'pdf'){ err('cp: resume.pdf: the Download button in Resume makes a real copy'); return; }
+        if(e.kind === 'pkg'){ err('cp: '+e.name+' is in the Trash'); return; }
+        var l = into != null ? into : D.loc, name = into != null ? null : D.name;
+        if(into == null && (D.err || D.e)){ err('cp: '+dst+': '+(D.err ? 'No such file or directory' : 'File exists')); return; }
+        if(e.kind === 'app' || e.kind === 'alias'){ lnTo(e.app, l, dst); return; }
+        if(l === '*apps' || l === 'trash'){ err('cp: '+dst+': Permission denied'); return; }
+        if(e.kind === 'note'){ jotFlush(); jotCreate(l, null, nbody(e.it.id), name || e.name); return; }
+        if(!(P.f.r || P.f.R)){ err('cp: '+s+' is a directory (not copied). cp -r copies it'); return; }
+        if(l !== ''){ err('cp: '+s+': folders can\u2019t go inside folders'); return; }
+        var f = dnew('folder', { name:name ? cleanName(e.it, name) : dnameNew(e.it.name, ''), tag:e.it.tag || '' });
+        dkids(e.it.id).forEach(function(kid){ if(kid.kind === 'note') jotCreate(f.id, null, nbody(kid.id), kid.name); else dnew('app', { app:kid.app, name:kid.name, in:f.id }); });
+        delete DK().view.icons; deskSave(); drender();
+      });
+    };
+    var ln0 = CMD.ln;
+    C.ln = function(arg){
+      var P = parse(arg); if(!P.f.s || !P.a.length){ ln0(arg); return; }
+      var x = at(P.a[0]), app = x.e && (x.e.kind === 'app' || x.e.kind === 'alias') ? x.e.app : appOf(P.a[0]);
+      if(!app || APPS[app].sys){ err('ln: '+P.a[0]+': No such file or directory'); return; }
+      if(appGone(app)){ print('ln: '+esc(app)+' isn\u2019t installed. '+o('brew install '+esc(app)), 'err'); return; }
+      var D = P.a[1] == null ? { dir:here() } : walk(P.a[1]);
+      if(D.dir == null){ err('ln: '+P.a[1]+': Not a directory'); return; }
+      if(lnTo(app, D.dir, P.a[1] || '.')) dim('made an alias of '+app+'.app in '+dirPath(D.dir));
+    };
+    /* open: a folder or place in Den, a note in Jot, an app (or say how to get it back) */
+    var open0 = CMD.open;
+    var opApp = function(a){ if(appGone(a)){ print('open: '+esc(APPS[a].title)+' isn\u2019t installed. '+o('brew install '+esc(a))+' brings it back', 'err'); return; } open(a); print('opening '+esc(a)); };
+    C.open = function(arg){
+      var P = parse(arg), t = P.a[0];
+      if(t == null || t === '.'){ var l = here(); if(denOpen(l)){ print('opening Den'+(l ? ' at '+esc(dirName(l)) : '')); return; } open0(''); return; }
+      var x = at(t), e = x.e;
+      if(x.special != null || (e && e.kind === 'folder' && x.loc !== 'trash')){ var to = x.special != null ? x.special : e.it.id; denOpen(to); print('opening '+esc(to === '' ? 'Desktop' : dirName(to))+' in Den'); return; }
+      if(e && x.loc === 'trash'){ print('open: '+esc(e.name)+' is in the Trash. '+o('restore '+esc(q(e.name)))+' puts it back', 'err'); return; }
+      if(e && e.kind === 'note'){ if(appGone('jot')){ print('open: Jot isn\u2019t installed. '+o('brew install jot'), 'err'); return; } jotOpen(e.it.id); print('opening '+esc(e.name)+' in Jot'); return; }
+      if(e && (e.kind === 'app' || e.kind === 'alias')){ opApp(e.app); return; }
+      if(e && e.kind === 'pdf'){ open0('resume'); return; }
+      var a = appOf(t); if(a){ opApp(a); return; }
+      open0(arg);
+    };
+    /* the editors open the note in Jot, made first if it is new */
+    var editor = function(name, old){ return function(arg){
+      var P = parse(arg), t = P.a[0];
+      if(t == null){ if(old){ old(arg); return; } if(appGone('jot')){ print(name+': Jot isn\u2019t installed, and it does the editing here. '+o('brew install jot'), 'err'); return; } jotOpen(); print('opening Jot'); return; }
+      var r = walk(t);
+      if(r.err){ err(name+': '+t+': No such file or directory'); return; }
+      if(r.dir != null){ err(name+': '+t+': Is a directory'); return; }
+      if(r.e && r.e.kind !== 'note'){ err(name+': '+t+': not a text file'); return; }
+      if(r.loc === 'trash'){ print(name+': '+esc(t)+' is in the Trash. '+o('restore')+' it first', 'err'); return; }
+      if(appGone('jot')){ print(name+': Jot isn\u2019t installed, and it does the editing here. '+o('brew install jot'), 'err'); return; }
+      if(!r.e && !writable(r.loc, name, t)) return;
+      var it = r.e ? r.e.it : jotCreate(r.loc, null, '', r.name);
+      jotOpen(it.id); jotFocus(true);
+      print(/^(vim?|nvim)$/.test(name) ? 'opened '+esc(it.name)+' in Jot. no :q needed, it saves as you type.' : 'opening '+esc(it.name)+' in Jot');
+    }; };
+    ['nano', 'pico', 'vim', 'vi', 'nvim', 'emacs', 'edit', 'code', 'subl', 'micro', 'mate', 'gedit', 'textedit', 'notepad', 'jot'].forEach(function(n){ C[n] = editor(n, n === 'jot' ? null : CMD[n]); });
+    /* the Trash */
+    C.trash = function(arg){ if(String(arg || '').trim()){ rmAll('-r '+arg, 'rm'); return; } var es = entries('trash'); if(!es.length){ dim('the Trash is empty.'); return; } print(es.map(tok).join('  ')); dim(plural(es.length, 'item')+'. restore <name> puts one back, empty erases them for good.'); };
+    C.restore = function(arg){
+      var P = parse(arg), es = entries('trash');
+      if(!P.a.length && !P.f.a){ print('usage: restore &lt;name&gt; | restore all'); if(es.length) dim('in the Trash: '+es.map(function(e){ return q(e.name); }).join('  ')); return; }
+      var ids = [];
+      if(P.f.a || (P.a.length === 1 && P.a[0] === 'all')) ids = es.map(function(e){ return e.it.id; });
+      else P.a.forEach(function(t){ var e = findIn('trash', t.replace(/^~\/\.trash\//i, '')); if(e) ids.push(e.it.id); else err('restore: '+t+': not in the Trash'); });
+      if(!ids.length) return;
+      var names = ids.map(function(id){ var it = ditem(id); return it.pkg ? it.app+'.app' : it.name; });
+      dputBack(ids); dim('put back '+names.map(q).join(', '));
+    };
+    C.empty = function(arg){
+      var n = dtrashed().length; if(!n){ dim('the Trash is already empty.'); return; }
+      if(/(^|\s)(-f|-y|--force|--yes)\b/.test(arg || '')){ dempty(); print('erased '+plural(n, 'item')+' for good.'); toast('Trash emptied', n === 1 ? '1 item erased.' : n+' items erased.'); return; }
+      demptyAsk(); dim('confirm in the dialog to erase '+plural(n, 'item')+' for good (empty -f skips it)');
+    };
+    /* apps: brew, apt, and the plain words */
+    var whyNot = function(a){ return a === 'terminal' ? 'Error: Terminal can\u2019t uninstall itself. who would type brew install?' : 'Error: '+APPS[a].title+' is part of tigOS. it stays.'; };
+    var install = function(t, apt){
+      var a = appOf(t); if(!a){ err(apt ? 'E: Unable to locate package '+t : 'Error: No available formula with the name "'+t+'".'); return; }
+      if(!appGone(a)){ print((apt ? esc(a)+' is already the newest version.' : 'Warning: '+esc(a)+' is already installed and up-to-date.'), 'dim'); return; }
+      appInstall(a);
+      print((apt ? 'Reading package lists... Done\nUnpacking '+esc(a)+'.app ...\nSetting up '+esc(a)+' ...\n' : '==&gt; Downloading '+esc(a)+'.app\n==&gt; Installing '+esc(a)+'\n\u{1F37A}  ')+esc(APPS[a].title)+' is installed'+(dockHas(a) ? ', back in the Dock' : ''), 'ok');
+    };
+    var uninstall = function(t, apt){
+      var a = appOf(t); if(!a){ err(apt ? 'E: Unable to locate package '+t : 'Error: No such keg: '+t); return; }
+      if(appGone(a)){ err((apt ? 'Package \''+a+'\' is not installed, so not removed' : 'Error: '+a+' is not installed.')); return; }
+      if(!appRemovable(a)){ err(whyNot(a)); return; }
+      appRemove(a);
+      print((apt ? 'Removing '+esc(a)+' ...' : 'Uninstalling '+esc(a)+'.app...')+' moved to the Trash. '+o('brew install '+esc(a))+' or Put Back brings it back');
+    };
+    var pkgs = function(sub, rest, apt){
+      if(/^(install|reinstall)$/.test(sub)){ if(!rest.length) print('usage: '+(apt ? 'apt' : 'brew')+' install &lt;app&gt;'); rest.forEach(function(t){ install(t, apt); }); return true; }
+      if(/^(uninstall|remove|rm|purge|autoremove)$/.test(sub)){ if(!rest.length) print('usage: '+(apt ? 'apt remove' : 'brew uninstall')+' &lt;app&gt;'); rest.forEach(function(t){ uninstall(t, apt); }); return true; }
+      if(/^(list|ls)$/.test(sub)){ print(esc(appsInstalled().join('  '))); var g = gone(); if(g.length) print('not installed: '+esc(g.join('  '))+'  ('+o('brew install &lt;app&gt;')+')', 'dim'); return true; }
+      return false;
+    };
+    var brew0 = CMD.brew, apt0 = CMD.apt;
+    C.brew = function(arg){ var P = parse(arg); if(!pkgs((P.a[0] || '').toLowerCase(), P.a.slice(1), false)) brew0(arg); };
+    C.apt = function(arg){ var P = parse(arg); if(!pkgs((P.a[0] || '').toLowerCase(), P.a.slice(1), true)) apt0(arg); };
+    C['apt-get'] = function(a){ C.apt(a); };
+    C.install = function(a){ pkgs('install', parse(a).a, false); }; C.reinstall = C.install; C.uninstall = function(a){ pkgs('uninstall', parse(a).a, false); };
+    var sudo0 = CMD.sudo;
+    C.sudo = function(arg){ var c = String(arg || '').split(' ')[0].toLowerCase(); if(USER.name !== 'ariel' && /^(apt|apt-get|brew|rm|rmdir|mv|cp|mkdir|touch|ln|install|uninstall|reinstall|empty|restore|nano|vim|vi)$/.test(c)){ CMD[c](String(arg).slice(c.length).trim()); return; } sudo0(arg); };
+    C.file = function(arg){ parse(arg).a.forEach(function(t){ var x = at(t), e = x.e, k = x.special != null ? 'directory' : !e ? 'cannot open (No such file or directory)' : e.kind === 'note' ? (nbody(e.it.id) ? 'UTF-8 text' : 'empty') : e.kind === 'folder' ? 'directory' : e.kind === 'pdf' ? 'PDF document, version 1.7, 1 page' : 'tigOS application'+(e.kind === 'alias' ? ' (alias)' : ''); print(esc(t)+': '+esc(k)); }); };
+    /* windows and powershell spellings */
+    var slashes = function(a){ return parse(String(a || '').replace(/(^|\s)\/[a-z](?=\s|$)/gi, ' ')).a.map(q).join(' '); };
+    C.del = function(a){ C.rm(slashes(a)); }; C.erase = C.del; C.rd = function(a){ C.rm((/(^|\s)\/s(\s|$)/i.test(a || '') ? '-r ' : '')+slashes(a)); }; C.md = function(a){ C.mkdir(a); };
+    C.move = function(a){ C.mv(slashes(a)); }; C.ren = C.move; C.rename = C.move; C.copy = function(a){ C.cp('-r '+slashes(a)); };
+    var type0 = CMD.type; C.type = function(a){ var t = parse(a).a[0], e = t != null && at(t).e; if(e && e.kind === 'note'){ C.cat(a); return; } type0(a); };
+    var ps = function(a){ return String(a || '').replace(/-(itemtype|type)\s+\S+/ig, ' ').replace(/-(path|name|literalpath|recurse|force)\b/ig, ' ').trim(); };   /* -Path, -Name and friends fall away */
+    C['remove-item'] = function(a){ C.rm((/-recurse\b/i.test(a || '') ? '-r ' : '')+ps(a)); }; C.ri = C['remove-item'];
+    C['new-item'] = function(a){ if(/-(itemtype|type)\s+dir/i.test(a || '')) C.mkdir(ps(a)); else C.touch(ps(a)); }; C.ni = C['new-item'];
+    C['get-content'] = function(a){ C.cat(a); }; C.gc = C['get-content']; C['copy-item'] = function(a){ C.cp('-r '+a); }; C['move-item'] = function(a){ C.mv(a); }; C['rename-item'] = function(a){ C.mv(a); };
+    C.mkfile = function(a){ C.touch(a); };
+    /* every one of these redraws the prompt afterwards: the folder you are in may have a new name, or be gone */
+    Object.keys(C).forEach(function(n){ var f = C[n]; CMD[n] = function(a){ f(a); k.refresh(); }; });
+    /* tab completion over what is here */
+    var names = function(dirs){ var l = here(), es = entries(l).filter(function(e){ return !dirs || e.kind === 'folder'; }).map(function(e){ return q(e.name); }); return es.concat(dirs ? (l === '' ? ['Applications', '.Trash'] : ['..']) : []); };
+    return {
+      tilde:function(){ var l = here(); return USER.name === 'greggyd' ? dirPath(l) : dirName(l); },
+      reset:function(){ S.cwd = ''; S.prev = ''; },
+      complete:function(ARGS){
+        var files = function(){ return names(false); };
+        ['cat', 'less', 'more', 'bat', 'head', 'tail', 'wc', 'rm', 'rmdir', 'mv', 'cp', 'touch', 'file', 'grep', 'ln', 'del', 'ren', 'copy', 'move', 'type', 'trash'].concat(['nano', 'pico', 'vim', 'vi', 'nvim', 'emacs', 'edit', 'code', 'subl', 'micro', 'mate', 'gedit', 'textedit', 'notepad', 'jot']).forEach(function(c){ ARGS[c] = files; });
+        ARGS.cd = function(){ return names(true); }; ARGS.tree = ARGS.cd; ARGS.mkdir = ARGS.cd; ARGS.ls = function(){ return names(true).concat(names(false)); };
+        ARGS.open = function(){ return VIS().concat(names(false)); };
+        ARGS.restore = function(){ return entries('trash').map(function(e){ return q(e.name); }).concat(['all']); };
+        ARGS.brew = function(){ return ['install', 'uninstall', 'reinstall', 'list'].concat(Object.keys(APPS).filter(function(x){ return !APPS[x].sys; })); };
+        ARGS.apt = function(){ return ['install', 'remove', 'list'].concat(Object.keys(APPS).filter(function(x){ return !APPS[x].sys; })); };
+        ARGS.install = function(){ return gone(); }; ARGS.reinstall = ARGS.install; ARGS.uninstall = function(){ return appsInstalled().filter(appRemovable); };
+      }
+    };
+  }
 /* tigOS core app.js, part 28: boot. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- boot ---------------- */
   var booted = false;

@@ -473,7 +473,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   locBtn.addEventListener('click', function(e){ e.stopPropagation(); cityToggle(undefined, locBtn); });
   clockBtn.addEventListener('click', function(e){ if(!isMobile()) return; e.stopPropagation(); cityToggle(undefined, clockBtn); });
   $('#wxCityBtn').addEventListener('click', function(e){ e.stopPropagation(); cityToggle(true, isMobile() ? clockBtn : locBtn); });
-  $$('#cityList button').forEach(function(b){ b.addEventListener('click', function(){ var c = CITIES.filter(function(x){ return x.id === b.getAttribute('data-city'); })[0]; if(c) setCity(c); cityToggle(false); toast(c.name, 'Clock and weather now follow '+c.name+'.'); }); });
+  $$('#cityList button').forEach(function(b){ b.addEventListener('click', function(){ var c = CITIES.filter(function(x){ return x.id === b.getAttribute('data-city'); })[0]; if(c) setCity(c); cityToggle(false); toast(c.name, 'Clock and weather updated'); }); });
   document.addEventListener('click', function(e){ if(!cityMenu.hidden && !e.target.closest('#cityMenu')) cityToggle(false); });
 
   /* calendar: click the menubar date on desktop for a plain month view */
@@ -578,7 +578,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     opts = opts || {};
     var a = APPS[id]; if(!a) return;
     if(id === 'trash') return isPhone() ? undefined : denOpen('trash');   /* the Trash is a place in Den, as it is in the Finder */
-    if(appGone(id)){ toast('\u201c'+a.title+'\u201d isn\u2019t installed', appPkg(id) ? 'It\u2019s in the Trash: Put Back reinstalls it.' : 'Reinstall it from Terminal: brew install '+id); return; }
+    if(appGone(id)){ toast('\u201c'+a.title+'\u201d isn\u2019t installed', appPkg(id) ? 'It\u2019s in the Trash' : 'brew install '+id); return; }
     if((a.sys || a.desk) && isPhone()) return;   /* the Trash, folders, Get Info, Jot and Den are desktop features; a phone has none of them */
     if(WM.wins[id]){ var ex = WM.wins[id]; if(ex.min){ restore(ex); } focus(ex); if(opts.route && ex.route) ex.route(opts.route); return ex; }
     if(isMobile()){ Object.keys(WM.wins).forEach(function(k){ var o = WM.wins[k]; o.el.remove(); delete WM.wins[k]; }); }   // phones: one app at a time
@@ -623,7 +623,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var done = false, finish = function(){ if(done) return; done = true; w.el.style.display = 'none'; w.el.classList.remove('minimizing'); var t = topWin(true); if(t) focus(t); updateChrome(); };
     w.el.addEventListener('animationend', function h(e){ if(e.target !== w.el) return; w.el.removeEventListener('animationend', h); finish(); });
     setTimeout(finish, (parseFloat(getComputedStyle(w.el).animationDuration) || .6) * 1000 + 400);   /* safety net if animationend never fires */
-    toast(APPS[w.id].title+' minimized', 'Click its dock icon to bring it back.');
+    toast(APPS[w.id].title+' minimized');
   }
   function restore(w){
     w.min = false; w.el.style.display = ''; w.el.style.animation = ''; aimAtDock(w); w.el.classList.add('restoring');
@@ -641,20 +641,56 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     else { w.max = false; w.el.classList.remove('max'); var z = w.el.style.zIndex; w.el.style.cssText = w.prev; w.el.style.zIndex = z; }
     w.zoomT = setTimeout(function(){ w.el.classList.remove('zooming'); }, 500);
   }
+  /* drag a window by its title bar. Near an edge of the screen a ghost shows where it will snap (27-menus.js wtile): the left or right
+     edge for a half, the top or bottom edge for a top or bottom half, a corner for a quarter. Let go to snap; drag a snapped window
+     away and it goes back to the size it had before, under the pointer, as in macOS */
+  function snapAt(px, py){
+    var a = area(), W = desk.clientWidth, E = 14, cz = Math.max(60, Math.min(140, Math.round(a.y1*.18))), cx = Math.max(80, Math.min(180, Math.round((a.x1 - a.x0)*.15)));
+    var L = px <= a.x0 + E, R = px >= a.x1 - E || px >= W - E, T = py <= E, B = py >= Math.min(a.y1, desk.clientHeight - E);
+    if(L || R){ var s = L ? 'l' : 'r'; return py <= cz ? 't'+s : py >= a.y1 - cz ? 'b'+s : (L ? 'left' : 'right'); }
+    if(T || B){ var v = T ? 't' : 'b'; return px <= a.x0 + cx ? v+'l' : px >= a.x1 - cx ? v+'r' : (T ? 'top' : 'bottom'); }
+    return '';
+  }
+  function snapGhost(w, how){
+    var g = w.snapG;
+    if(!how){ if(g){ g.classList.remove('on'); clearTimeout(w.snapT); w.snapT = setTimeout(function(){ if(!g.classList.contains('on')) g.remove(); }, 220); } return; }
+    var r = tileRect(how, w.el); if(!r) return;
+    if(!g){ g = w.snapG = document.createElement('div'); g.className = 'snap-ghost'; g.setAttribute('aria-hidden', 'true'); }
+    if(g.parentNode !== w.el.parentNode || g.nextSibling !== w.el) w.el.parentNode.insertBefore(g, w.el);   /* same z as the window, just before it: under the window, over the rest */
+    g.style.zIndex = w.el.style.zIndex || 1;
+    g.style.left = r[0]+'px'; g.style.top = r[1]+'px'; g.style.width = r[2]+'px'; g.style.height = r[3]+'px';
+    clearTimeout(w.snapT); g.offsetWidth; g.classList.add('on');
+  }
   function makeDraggable(w){
-    var bar = $('.win-bar', w.el), sx, sy, ox, oy, moving = false;
+    var bar = $('.win-bar', w.el), sx, sy, ox, oy, moving = false, snap = '', before = '', went = false;
     bar.addEventListener('pointerdown', function(e){
-      if(e.target.closest('.lights, .win-tools') || isMobile() || w.max || w.el.classList.contains('fs')) return;
-      moving = true; sx = e.clientX; sy = e.clientY; ox = w.el.offsetLeft; oy = w.el.offsetTop; w.el.classList.add('dragging'); bar.setPointerCapture(e.pointerId);
+      if(e.target.closest('.lights, .win-tools') || isMobile() || w.max || w.el.classList.contains('fs') || e.button > 0) return;
+      moving = true; went = false; snap = ''; sx = e.clientX; sy = e.clientY; ox = w.el.offsetLeft; oy = w.el.offsetTop; before = w.el.style.cssText; w.el.classList.add('dragging'); bar.setPointerCapture(e.pointerId);
     });
     bar.addEventListener('pointermove', function(e){
       if(!moving) return;
+      if(!went){ if(Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 5) return; went = true;
+        if(w.tiled && w.tilePrev){   /* pull a snapped window off its tile: its old size comes back, the same spot under the pointer */
+          var t = document.createElement('div'); t.style.cssText = w.tilePrev; var pw = parseFloat(t.style.width), ph = parseFloat(t.style.height), r = w.el.getBoundingClientRect(), fx = r.width ? (sx - r.left)/r.width : .5;
+          before = w.tilePrev; w.tilePrev = null; w.tiled = ''; w.el.classList.remove('zooming');
+          if(pw > 0){ ox = Math.round(ox + (sx - r.left) - fx*pw); w.el.style.width = pw+'px'; }
+          if(ph > 0) w.el.style.height = ph+'px';
+        }
+      }
       var nx = ox + (e.clientX - sx), ny = oy + (e.clientY - sy);
       nx = Math.max(-w.el.offsetWidth + 120, Math.min(desk.clientWidth - 120, nx)); ny = Math.max(0, Math.min(desk.clientHeight - 60, ny));
       w.el.style.left = nx+'px'; w.el.style.top = ny+'px';
+      if(w.id === 'games') return;   /* a game keeps its own shape (its green light is full screen) */
+      var dr = desk.getBoundingClientRect(), s = snapAt(e.clientX - dr.left, e.clientY - dr.top);
+      if(s !== snap){ snap = s; snapGhost(w, s); }
     });
-    var end = function(){ if(moving){ moving = false; w.el.classList.remove('dragging'); } };
+    var end = function(e){
+      if(!moving) return; moving = false; w.el.classList.remove('dragging');
+      var s = e && e.type === 'pointerup' ? snap : ''; snap = ''; snapGhost(w, '');
+      if(s){ w.tilePrev = null; wtile(w, s, before); }
+    };
     bar.addEventListener('pointerup', end); bar.addEventListener('pointercancel', end);
+    bar.addEventListener('lostpointercapture', end);
   }
   function makeResizable(w){
     var MINW = 360, MINH = 240;
@@ -1310,7 +1346,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function petGoodbye(el){
     var kind = el.getAttribute('data-pet'), pt = PETS[kind] || { name:'Your pet' };
     clearTimeout(PET.t);
-    toast('Bye, '+pt.name, 'Type pet in the Terminal whenever you want company again.', 'heart');
+    toast('Bye, '+pt.name, 'Type pet in Terminal to call them back', 'heart');
     if(kind === 'cow'){                                                   /* the cow gets beamed up instead of poofing: step clear of the corner first */
       PET.busy = false; var rr = root.getBoundingClientRect(), w = el.offsetWidth;
       var tx = Math.max(w*.6, Math.min(rr.width - w*1.6, el.offsetLeft - w*1.3)), ty = Math.max(48, Math.min(rr.height - w*1.9, el.offsetTop - w*.6));
@@ -1486,7 +1522,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
         if(!key){ print('no pet called '+esc(a)+'. try: '+Object.keys(PETS).map(o).join(', '), 'err'); return; }
         petSet(key); var pt = PETS[key];
         print(pt.name+' the '+pt.label+' pops in, bottom right. drag them around \u2014 they stay close to wherever you put them.', 'ok');
-        toast(pt.name+' is here', 'Drag your '+pt.label+' anywhere, tap for hearts. Drop onto the X to say goodbye.', 'heart');
+        toast(pt.name+' is here', 'Tap for hearts, drop on the X to say bye', 'heart');
       },
 
       tour: function(){ print('starting the tour\u2026 your windows step aside and come back when it ends.', 'ok'); setTimeout(tourStart, 250); },
@@ -1798,7 +1834,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       Object.keys(PETS).map(function(k){ var pt = PETS[k], on = k === curKey; return '<div class="pt-card'+(on ? ' on' : '')+'" data-pet="'+k+'"><div class="pt-art">'+mini(k)+'</div><div class="pt-meta"><b>'+esc(pt.name)+'</b><small>the '+esc(pt.label)+'</small><em>'+(pt.say || []).slice(0, 3).map(esc).join(' \u00b7 ')+'</em></div>'+
         (on ? '<button type="button" class="pt-btn live" data-act="off" title="Click to send '+esc(pt.name)+' home"><span class="a">Out now</span><span class="b">Send home</span></button>' : '<button type="button" class="pt-btn" data-act="on">Bring out</button>')+'</div>'; }).join('')+
       '</div></div>';
-    $$('.pt-btn', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.closest('.pt-card').getAttribute('data-pet'); if(b.getAttribute('data-act') === 'off'){ var el = petEl(); if(el) petGoodbye(el); else petSet(''); } else { petSet(k); toast(PETS[k].name+' is out', 'Bottom right. Drag them wherever you like.'); } }); });
+    $$('.pt-btn', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.closest('.pt-card').getAttribute('data-pet'); if(b.getAttribute('data-act') === 'off'){ var el = petEl(); if(el) petGoodbye(el); else petSet(''); } else { petSet(k); toast(PETS[k].name+' is out', 'Drag them anywhere'); } }); });
     $$('.seg button', w.body).forEach(function(b){ b.addEventListener('click', function(){ setPref(b.parentNode.getAttribute('data-pref'), b.getAttribute('data-v')); }); });
     pet3Scan(w.body);   /* every card is a live 3D pet */
     /* idle moods: every few seconds one card looks around, hops or gets hearts, so the window never sits still */
@@ -1885,10 +1921,10 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     $$('.seg[data-pref] button', w.body).forEach(function(b){ b.addEventListener('click', function(){ setPref(b.parentNode.getAttribute('data-pref'), b.getAttribute('data-v')); }); });
     $$('.seg[data-dview] button', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.parentNode.getAttribute('data-dview'), v = b.getAttribute('data-v'); dviewSet(k, v === 'true' ? true : v === 'false' ? false : v); }); });
     var drs = $('[data-dock-reset]', w.body); if(drs) drs.addEventListener('click', dockResetAsk);
-    $$('[data-pet-pick]', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.getAttribute('data-pet-pick'); if(!k){ if(!PREF.pet) return; var el = petEl(); if(el) petGoodbye(el); else petSet(''); return; } if(k === PREF.pet) return; petSet(k); toast(PETS[k].name+' is out', 'Bottom right. Drag them wherever you like.'); }); });
+    $$('[data-pet-pick]', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.getAttribute('data-pet-pick'); if(!k){ if(!PREF.pet) return; var el = petEl(); if(el) petGoodbye(el); else petSet(''); return; } if(k === PREF.pet) return; petSet(k); toast(PETS[k].name+' is out', 'Drag them anywhere'); }); });
     var op = $('[data-open-pets]', w.body); if(op) op.addEventListener('click', function(){ open('pets'); });
     pet3Scan(w.body);
-    $('[data-reset]', w.body).addEventListener('click', function(){ PREF = { theme:'dark', accent:'orange', text:'md', dock:'md', dockpos:'bottom', dockhide:'off', dockmag:'on', motion:'on', cursor:'block', pet:'', petsize:'md', wall:'live', saver:'drift', idle:'10' }; applyPrefs(); RENDER.settings(w); toast('Settings reset', 'Back to the defaults.'); });
+    $('[data-reset]', w.body).addEventListener('click', function(){ PREF = { theme:'dark', accent:'orange', text:'md', dock:'md', dockpos:'bottom', dockhide:'off', dockmag:'on', motion:'on', cursor:'block', pet:'', petsize:'md', wall:'live', saver:'drift', idle:'10' }; applyPrefs(); RENDER.settings(w); toast('Settings reset'); });
   };
 
 /* tigOS core app.js, part 17: lightbox. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
@@ -1902,12 +1938,12 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var spot = $('#spotlight'), spotIn = $('#spotInput'), spotRes = $('#spotResults'), spotSel = 0;
   function index(){
     var items = [];
-    Object.keys(APPS).filter(function(k){ return !APPS[k].hidden; }).forEach(function(k){ items.push({ t:APPS[k].title, s:'Open app', k:'App', desk:!!APPS[k].desk, tile:APPS[k].tile, icon:APPS[k].icon, go:function(){ open(k); } }); });   /* all of them: one removed from Terminal drops out at search time (spotRender), so a reinstall brings it straight back */
+    Object.keys(APPS).filter(function(k){ return !APPS[k].hidden; }).forEach(function(k){ items.push({ t:APPS[k].title, s:'Open app', k:'App', app:k, desk:!!APPS[k].desk, tile:APPS[k].tile, icon:APPS[k].icon, go:function(){ open(k); } }); });   /* all of them: one removed from Terminal drops out at search time (spotRender), so a reinstall brings it straight back */
     /* hidden apps never sit in the default list, but a search for them (or for what is inside them) finds them */
-    items.push({ t:APPS.games.title, s:'Open app \u00b7 '+GAMES.length+' games', k:'App', hidden:true, tile:'games', icon:'gamepad', hay:'arcade game games play '+GAMES.map(function(g){ return g.id+' '+g.name; }).join(' '), go:function(){ open('games'); } });
-    items.push({ t:APPS.pets.title, s:'Open app \u00b7 desktop companions', k:'App', hidden:true, tile:'paw', icon:'paw', hay:'pet pets companion '+Object.keys(PETS).map(function(k){ return k+' '+PETS[k].name+' '+PETS[k].label; }).join(' '), go:function(){ open('pets'); } });
-    items.push({ t:APPS.jot.title, s:'Open app \u00b7 notes, saved as text files', k:'App', hidden:true, desk:true, tile:'jot', icon:'jot', hay:'notes note notepad text txt markdown md write writing jot document doc', go:function(){ jotOpen(); } });
-    items.push({ t:APPS.den.title, s:'Open app \u00b7 browse your files and folders', k:'App', hidden:true, desk:true, tile:'den', icon:'den', hay:'finder files file folders folder browse explorer den documents', go:function(){ denOpen(''); } });
+    items.push({ t:APPS.games.title, s:'Open app \u00b7 '+GAMES.length+' games', k:'App', app:'games', hidden:true, tile:'games', icon:'gamepad', hay:'arcade game games play '+GAMES.map(function(g){ return g.id+' '+g.name; }).join(' '), go:function(){ open('games'); } });
+    items.push({ t:APPS.pets.title, s:'Open app \u00b7 desktop companions', k:'App', app:'pets', hidden:true, tile:'paw', icon:'paw', hay:'pet pets companion '+Object.keys(PETS).map(function(k){ return k+' '+PETS[k].name+' '+PETS[k].label; }).join(' '), go:function(){ open('pets'); } });
+    items.push({ t:APPS.jot.title, s:'Open app \u00b7 notes, saved as text files', k:'App', app:'jot', hidden:true, desk:true, tile:'jot', icon:'jot', hay:'notes note notepad text txt markdown md write writing jot document doc', go:function(){ jotOpen(); } });
+    items.push({ t:APPS.den.title, s:'Open app \u00b7 browse your files and folders', k:'App', app:'den', hidden:true, desk:true, tile:'den', icon:'den', hay:'finder files file folders folder browse explorer den documents', go:function(){ denOpen(''); } });
     GAMES.forEach(function(g){ items.push({ t:g.name, s:'Arcade game \u00b7 '+g.blurb, k:'Game', tile:'games', icon:'gamepad', art:g.icon, bg:g.color, hay:g.id+' game play arcade', go:function(){ open('games', { route:g.id }); } }); });
     Object.keys(PETS).forEach(function(k){ items.push({ t:PETS[k].name+' the '+PETS[k].label, s:'Pet \u00b7 bring them out', k:'Pet', tile:'paw face', icon:'paw', art:PETS[k].svg, hay:k+' pet pets', go:function(){ petSet(k); open('pets'); } }); });
     items.splice(items.findIndex(function(x){ return x.t === APPS.contact.title; }) + 1, 0, { t:'LinkedIn', s:'Open profile \u2197 \u00b7 '+TIG.contact.linkedinLabel, k:'App', tile:'linkedin', icon:'linkedin', hay:'linkedin social profile network connect message chase', go:function(){ window.open(TIG.contact.linkedin, '_blank', 'noopener'); toast('Opening LinkedIn', TIG.contact.linkedinLabel, 'linkedin'); } });
@@ -1923,7 +1959,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   }
   var IDX = index(), spotHits = [];
   /* notes change all the time, so they join the index at search time; phones have no Jot or Den, so neither they nor notes show there */
-  function spotNotes(){ return jnotes().map(function(it){ return { t:it.name, s:'Note \u00b7 '+dwhere(it)+' \u00b7 '+jwhen(it.m || it.t), k:'Note', desk:true, tile:'jot', icon:'jot', hay:nbody(it.id).slice(0, 20000), go:function(){ jotOpen(it.id); } }; }); }
+  function spotNotes(){ return jnotes().map(function(it){ return { note:it.id, t:it.name, s:'Note \u00b7 '+dwhere(it)+' \u00b7 '+jwhen(it.m || it.t), k:'Note', desk:true, tile:'jot', icon:'jot', hay:nbody(it.id).slice(0, 20000), go:function(){ jotOpen(it.id); } }; }); }
   function spotRender(q){
     q = (q||'').trim().toLowerCase();
     var ph = isPhone(), all = (ph ? IDX : IDX.concat(q ? spotNotes() : [])).filter(function(it){ return !(it.desk && ph) && !(APPS[it.tile] && appGone(it.tile)); });   /* a removed app, and what lives inside it, is not offered */
@@ -2057,6 +2093,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(!offEl.hidden) return;
     if(!loginEl.hidden && !e.target.closest('#loginIn')) return;
     var meta = e.metaKey || e.ctrlKey;
+    /* Control-Option and an arrow, U I J K, Return, C or Delete: snap the front window (27-menus.js TILE_KEYS lists them in its Move & Resize menu) */
+    var TK = { ArrowLeft:'left', ArrowRight:'right', ArrowUp:'top', ArrowDown:'bottom', KeyU:'tl', KeyI:'tr', KeyJ:'bl', KeyK:'br', Enter:'fill', NumpadEnter:'fill', KeyC:'center', Backspace:'prev' };
+    if(e.ctrlKey && e.altKey && !e.metaKey && !e.shiftKey && TK[e.code] && !isMobile() && spot.hidden){ var fw = topWin(true); if(fw && fw.id !== 'games'){ e.preventDefault(); wtile(fw, TK[e.code]); return; } }
     if(meta && (e.key === 'k' || e.key === 'K')){ e.preventDefault(); spot.hidden ? spotOpen() : spotClose(); return; }
     if(e.key === 'Escape'){
       var fsw = $('.win.fs'); if(fsw && WM.wins[fsw.dataset.app]){ gameFs(WM.wins[fsw.dataset.app], false); return; }
@@ -2068,7 +2107,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       var eg = $('.egg:not([hidden])'); if(eg){ eg.hidden = true; return; }
     }
     if(meta && (e.key === 'w' || e.key === 'W')){ var t = topWin(); if(t){ e.preventDefault(); close(t); } }
-    if(!meta && !e.altKey && spot.hidden && !e.target.closest('input,textarea') && !$('.win.focus[data-app="games"]') && /^[1-9]$/.test(e.key)){ var nth = dockList()[+e.key-1]; if(nth) open(nth); }   /* 1 to 9: the Dock's apps in their current order */
+    if(!meta && !e.altKey && spot.hidden && !e.target.closest('input,textarea,[contenteditable="true"]') && !$('.win.focus[data-app="games"]') && /^[1-9]$/.test(e.key)){ var nth = dockList()[+e.key-1]; if(nth) open(nth); }   /* 1 to 9: the Dock's apps in their current order */
   });
 
 /* tigOS core app.js, part 23: tour. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
@@ -2287,7 +2326,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
        { t:label, i:icon, k:shortcut hint (hidden on a phone), note:a quiet aside, on:checked, dis:disabled, fn:action, sub:[items] or a function returning them, dot:colour, id:test hook, danger:red }
      '-' draws a separator, { h:'Label' } a section heading, { tags:current, fn:function(colour) } the row of colour tags. Falsy entries are
      skipped, so a menu reads as a list of conditions. What goes in each menu lives in 27-menus.js; the desktop and dock behind it in
-     27-desktop.js and 27-dock-edit.js. The browser keeps its own menu wherever it is the useful one: text, links and everything inside an app window. */
+     27-desktop.js and 27-dock-edit.js. The browser's own menu never shows: text fields, links, images and the inside of every window get
+     tigOS menus, and anywhere without one gets none. A touch keeps the browser's (text selection on a tablet). */
   var CTX = { stack:[], maxB:0, touch:false, held:false, moved:false, x0:0, y0:0, swallow:false, lp:null, touchT:0, last:null, onClose:null, src:null, cls:'', hoverT:0, vw:0 };
   var TAGS = [['red', '#ff5f57', 'Red'], ['orange', '#ff9f0a', 'Orange'], ['yellow', '#ffd60a', 'Yellow'], ['green', '#32d74b', 'Green'], ['blue', '#0a84ff', 'Blue'], ['purple', '#bf5af2', 'Purple'], ['gray', '#98989d', 'Gray']];
   function tagHex(t){ for(var i = 0; i < TAGS.length; i++) if(TAGS[i][0] === t) return TAGS[i][1]; return ''; }
@@ -2345,7 +2385,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     o = o || {};
     ctxClose(true);
     if(typeof closePops === 'function') closePops('ctx');
-    if(!spot.hidden) spotClose();
+    if(!spot.hidden && !o.keepSpot) spotClose();
     items = ctxClean(items); if(!items.length) return;
     var m = ctxBuild(items, 0); root.appendChild(m);
     CTX.stack = [{ el:m, items:items, sel:-1, parent:-1 }];
@@ -2465,26 +2505,42 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   window.addEventListener('blur', function(){ ctxClose(); });
   window.addEventListener('resize', function(){ if(CTX.stack.length && root.clientWidth !== CTX.vw) ctxClose(true); });   /* a phone's browser bar sliding changes only the height: keep the menu */
   root.addEventListener('wheel', function(e){ if(CTX.stack.length && !(e.target.closest && e.target.closest('.ctx'))) ctxClose(); }, { passive:true });
-  /* what was right-clicked. null = leave the browser's own menu; 'none' = no menu at all (the menubar, the lock and sleep screens) */
+  /* what was right-clicked. null = leave the browser's own menu (only ever for a touch); 'none' = no menu at all */
   function ctxTarget(t, touch){
     if(!t || !t.closest || !root.contains(t)) return null;
+    var no = touch ? null : { kind:'none' };
     if(t.closest('.ctx')) return { kind:'none' };
-    var jw = t.closest('.win[data-app="jot"]');   /* Jot: its notes and its text get menus of their own; the name field keeps the browser's */
+    var jw = t.closest('.win[data-app="jot"]');   /* Jot: its notes and its text get menus of their own */
     if(jw && !t.closest('.jsheet-bg')){
       var jt = t.closest('.jot-text'); if(jt) return touch ? null : { kind:'jotdoc', el:jt };
       var ji = t.closest('.jot-it'); if(ji) return { kind:'jot', el:ji };
       if(t.closest('.jot-side') && !t.closest('button')) return { kind:'jotside', el:t.closest('.jot-side') };
     }
-    if(t.closest('input, textarea, select, [contenteditable="true"]')) return null;
-    if(t.closest('#login, #sleep, #off, #shutdown, #boot, .dlg-bg')) return touch ? null : { kind:'none' };
-    if(t.closest('#spotlight, #lightbox, .egg, .tour-tip, .toast')) return null;
+    var fld = t.closest('input, textarea, select, [contenteditable="true"]');
+    if(fld){ if(touch) return null; if(fld.id === 'termIn') return { kind:'term', el:fld.closest('.win') }; return fld.tagName === 'SELECT' || /^(checkbox|radio|range|color|file|button|submit)$/i.test(fld.type || '') ? no : { kind:'field', el:fld }; }
+    if(t.closest('#login, #sleep, #off, #shutdown, #boot, .dlg-bg, .jsheet-bg, .egg, .tour-tip')) return no;
+    if(t.closest('#spotlight')){ var sr = t.closest('#spotResults button[data-i]'); return sr ? { kind:'spot', el:sr } : no; }
+    if(t.closest('#lightbox')) return touch ? null : { kind:'lb' };
+    if(t.closest('#toast')) return touch ? null : { kind:'toast' };
     var fw = t.closest('.fw');
     if(fw){ var fi = t.closest('.dicon'); return fi ? { kind:'icon', el:fi } : { kind:'fbg', el:fw }; }
     var da = t.closest('.den-app'); if(da) return { kind:'denapp', el:da };
-    if(t.closest('.win-body')) return null;
+    var dl = t.closest('.den-side [data-loc]'); if(dl) return { kind:'denloc', el:dl };
+    if(t.closest('.den-side')) return no;
+    var dm = t.closest('.den-main');
+    if(dm){ if(t.closest('.den-trh')) return touch ? null : { kind:'fbg', el:$('.den-fw', dm) || dm }; if(DEN.loc === '*apps') return touch ? null : { kind:'denapps', el:dm }; }
+    var body = t.closest('.win-body');
+    if(body){
+      if(touch) return null;
+      var wn = body.closest('.win'), lk = t.closest('a[href]'), im = t.closest('img');
+      if(wn.dataset.app === 'terminal') return { kind:'term', el:wn };
+      if(lk) return { kind:'href', el:lk };
+      if(im) return { kind:'img', el:im, win:wn };
+      return { kind:'wbody', el:wn };
+    }
     var bar = t.closest('.win-bar');
-    if(bar){ if(touch || isMobile() || t.closest('a[href]')) return null; return { kind:'win', el:bar.closest('.win') }; }
-    if(t.closest('.win')) return null;
+    if(bar){ if(touch) return null; if(t.closest('a[href]')) return { kind:'href', el:t.closest('a[href]') }; return isMobile() ? no : { kind:'win', el:bar.closest('.win') }; }
+    if(t.closest('.win')) return no;
     var dk = t.closest('#dock .dk');
     if(dk) return { kind:dk.classList.contains('trash') ? 'trash' : dk.tagName === 'A' ? 'link' : 'dock', el:dk };
     if(t.closest('#dock')) return isPhone() ? { kind:'none' } : { kind:'dockbg', el:$('#dock') };   /* a phone's dock is not edited, so the space beside its icons has no menu */
@@ -2492,10 +2548,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(pet) return touch ? null : { kind:'pet', el:pet };
     var di = t.closest('.dicon');
     if(di) return { kind:'icon', el:di };
-    if(t.closest('a[href]')) return null;   /* a link in the welcome text keeps the browser's link menu */
+    if(t.closest('a[href]')) return touch ? null : { kind:'href', el:t.closest('a[href]') };   /* a link in the welcome text */
     if(t.closest('#desktop')) return { kind:'desk', el:desk };
-    if(t.closest('.menubar')) return touch || t.closest('a[href]') ? null : { kind:'none' };
-    return null;
+    return no;   /* the menubar, its menus and anything else */
   }
   function dockSide(){ if(isMobile()) return 'bottom'; if(root.classList.contains('u-greggyd')) return 'left'; return PREF.dockpos === 'left' || PREF.dockpos === 'right' ? PREF.dockpos : 'bottom'; }
   /* build the menu for a target (27-menus.js) and show it at the pointer, or hung off the dock icon it belongs to */
@@ -2504,6 +2559,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var f = CTX_MENUS[tg.kind]; if(!f) return null;
     var rr = root.getBoundingClientRect(), lx = x - rr.left, ly = y - rr.top;
     var spec = f(tg, lx, ly, o); if(!spec || !spec.items) return null;
+    o.keepSpot = !!spec.keepSpot;
     var side = '', px = lx, py = ly;
     if(spec.anchor || spec.atDock){   /* atDock: the Dock's own menu, at the pointer along the dock but clear of it */
       var r = spec.anchor ? spec.anchor.getBoundingClientRect() : { left:x, top:y, width:0, height:0 }, d = $('#dock').getBoundingClientRect(), s = dockSide();
@@ -2512,19 +2568,21 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       else { side = 'top'; px = r.left + r.width/2 - rr.left; py = d.top - rr.top; }
     }
     CTX.touch = !!o.touch;
-    var m = ctxShow(spec.items, px, py, { side:side, src:spec.src || null, cls:spec.cls || '', onClose:spec.onClose });
+    var m = ctxShow(spec.items, px, py, { side:side, src:spec.src || null, cls:spec.cls || '', onClose:spec.onClose, keepSpot:o.keepSpot });
     if(!m) return null;
     CTX.held = !!o.held; CTX.moved = false; CTX.x0 = x; CTX.y0 = y; CTX.swallow = true;
     return m;
   }
   root.addEventListener('contextmenu', function(e){
+    if(e.defaultPrevented) return;   /* a game that uses the right button (Mines, Nightshift) has already claimed it */
     var touchy = Date.now() - CTX.touchT < 1500, tg = ctxTarget(e.target, touchy);
     if(!tg) return;
     e.preventDefault();
-    if(tg.kind === 'none') return;
+    if(tg.kind === 'none' || !CTX_MENUS[tg.kind]) return;
     if(touchy){ if(CTX.lp) lpFire(); return; }   /* Android sends contextmenu for a long press; the long-press timer is the one path for touch, so just fire it now */
-    ctxOpenAt(tg, e.clientX, e.clientY, { held:(e.buttons & 3) !== 0 });
+    if(!ctxOpenAt(tg, e.clientX, e.clientY, { held:(e.buttons & 3) !== 0 })) ctxClose(true);
   });
+  document.addEventListener('contextmenu', function(e){ if(!e.defaultPrevented && !(root.contains(e.target)) && Date.now() - CTX.touchT > 1500) e.preventDefault(); });   /* the page around tigOS, if any shows */
   /* touch: hold still for half a second. Moving more than 10px (a scroll, a drag), a second finger (a pinch) or lifting early cancels it */
   function lpCancel(){ if(CTX.lp){ clearTimeout(CTX.lp.t); if(CTX.lp.tg.el) CTX.lp.tg.el.classList.remove('lp'); CTX.lp = null; } }
   function lpFire(){
@@ -2567,7 +2625,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var DEN = { loc:'', back:[], fwd:[], want:null, seen:null };
   function denOk(loc){ if(loc === '' || loc === '*notes' || loc === '*apps' || loc === 'trash') return true; var it = ditem(loc); return !!(it && it.kind === 'folder' && it.in !== 'trash'); }
   function denLabel(loc){ return loc === '' ? 'Desktop' : loc === '*notes' ? 'Notes' : loc === '*apps' ? 'Applications' : loc === 'trash' ? 'Trash' : (ditem(loc) || { name:'Desktop' }).name; }
-  function denApps(){ return appsInstalled(); }
+  function denApps(){ return appsInstalled().filter(function(k){ return k !== 'den'; }); }   /* Den is the browser itself, as Finder is not in /Applications */
+  /* Show in Applications: Den at its Applications, that app selected */
+  function denShowApp(app){ var w = denOpen('*apps'); if(!w) return null; var b = $('.den-app[data-app="'+app+'"]', w.body); if(b){ $$('.den-app.sel', w.body).forEach(function(x){ x.classList.remove('sel'); }); b.classList.add('sel'); try { b.focus({ preventScroll:true }); b.scrollIntoView({ block:'nearest' }); } catch(x){} } return w; }
   /* open Den at a place, optionally with one item selected (Show in Den) */
   function denOpen(loc, sel){
     if(isPhone()) return null;
@@ -2629,7 +2689,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       list.sort(L === 'trash' ? function(a, b){ return (b.t2 || 0) - (a.t2 || 0); } : L === '*notes' ? function(a, b){ return (b.m || b.t) - (a.m || a.t); } : dcmp('name'));
       n = list.length;
       var empty = L === '' ? 'Nothing on the Desktop yet.' : L === '*notes' ? 'No notes yet. New Note starts one.' : null;
-      var head = L !== 'trash' ? '' : '<div class="den-trh"><span class="tile trash">'+ic(n ? 'trash-full' : 'trash')+'</span><div class="den-trt"><b>Trash</b><span>'+(n ? (n === 1 ? '1 item' : n+' items')+' \u00b7 erased for good when you empty it' : 'Nothing in here')+'</span></div><button type="button" data-den="empty"'+(n ? '' : ' disabled')+'>Empty</button></div>';
+      var head = L !== 'trash' ? '' : '<div class="den-trh"><span class="tile trash">'+ic(n ? 'trash-full' : 'trash')+'</span><div class="den-trt"><b>Trash</b><span>'+(n ? (n === 1 ? '1 item' : n+' items') : 'Nothing in here')+'</span></div><button type="button" data-den="empty"'+(n ? '' : ' disabled')+'>Empty</button></div>';
       main.innerHTML = head+'<div class="fw den-fw'+(L === 'trash' ? ' trashw' : '')+'" data-folder="'+esc(L)+'">'+fgrid(list, L, empty, same ? DEN.seen.ids : null)+'<div class="fw-foot">'+(n === 1 ? '1 item' : n+' items')+'</div></div>';
       sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', main); if(e) e.classList.add('sel'); });
       if(had) DFOCUS = $('.den-fw', main);   /* a redraw keeps the keyboard here */
@@ -2730,7 +2790,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   }
   var FOLDER_SVG = '<svg class="dfold" viewBox="0 0 64 52" aria-hidden="true"><path class="fb" d="M4 9a5 5 0 0 1 5-5h14.6a4 4 0 0 1 3 1.4L30 9h25a5 5 0 0 1 5 5v29a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="fbs" d="M4 9a5 5 0 0 1 5-5h14.6a4 4 0 0 1 3 1.4L30 9h25a5 5 0 0 1 5 5v29a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="ff" d="M4 18a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="fs" d="M4 18a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" fill="url(#lgFold)"/><path class="fh" d="M8.5 15.2h47"/></svg>';
   /* a text file: a white page with a folded corner, ruled lines and its extension, like Finder's document icons */
-  function noteSVG(name){ return '<svg class="dnote" viewBox="0 0 48 60" aria-hidden="true"><path class="np" d="M7 2.5h24.5L43.5 14.5v41a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-51a2 2 0 0 1 2-2z"/><path class="nf" d="M31.5 2.5v10a2 2 0 0 0 2 2h10z"/><path class="nl" d="M11.5 21h20M11.5 26.5h25M11.5 32h25M11.5 37.5h16"/><text class="nx" x="24" y="51.5" text-anchor="middle">'+(/\.(md|markdown)$/i.test(name || '') ? 'MD' : 'TXT')+'</text></svg>'; }
+  function noteSVG(name){ return '<svg class="dnote" viewBox="0 0 48 60" aria-hidden="true"><path class="np" d="M7 2.5h24.5L43.5 14.5v41a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-51a2 2 0 0 1 2-2z"/><path class="nf" d="M31.5 2.5v10a2 2 0 0 0 2 2h10z"/><path class="nl" d="M11.5 21h20M11.5 26.5h25M11.5 32h25M11.5 37.5h16"/><text class="nx" x="24" y="51.5" text-anchor="middle">'+(/\.(md|markdown)$/i.test(name || '') ? 'MD' : /\.(txt|text)$/i.test(name || '') ? 'TXT' : '')+'</text></svg>'; }
   function dart(it){ return it.kind === 'folder' ? FOLDER_SVG : it.kind === 'note' ? noteSVG(it.name) : tileHTML(it.app); }
   function dkindLabel(it){ return it.kind === 'folder' ? ', folder' : it.kind === 'note' ? ', text document' : ''; }
   function diconHTML(it){ return '<span class="dart"'+(it.kind === 'folder' && it.tag ? ' style="--fc:'+tagHex(it.tag)+'"' : '')+'>'+dart(it)+'</span><span class="dlab">'+(it.tag ? '<i class="dtag" style="background:'+tagHex(it.tag)+'"></i>' : '')+'<span class="dname">'+esc(it.name)+'</span></span>'; }
@@ -2832,13 +2892,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var it = dnew('app', { app:app, name:APPS[app].title });
     delete DK().view.icons;
     deskSave(); drender(); dflash(it.id);
-    if(!quiet) toast(APPS[app].title+' is on the Desktop', isMobile() ? 'Tap it to open, hold it for options.' : 'Double-click it to open. Right-click for more.');
+    if(!quiet) toast(APPS[app].title+' is on the Desktop');
     return it;
   }
   function dopen(id, from){
     var it = ditem(id); if(!it) return;
     if(DREN && DREN.id === id) return;
-    if(it.in === 'trash'){ toast('\u201c'+it.name+'\u201d is in the Trash', 'Put it back first, then open it.'); return; }
+    if(it.in === 'trash'){ toast('\u201c'+it.name+'\u201d is in the Trash', 'Put it back to open it'); return; }
     if(it.kind === 'note'){ jotOpen(id, from); return; }
     if(it.kind === 'folder' && from && from.closest && from.closest('.denw')){ denGo(id); return; }   /* Finder: a folder opens in place */
     if(it.kind === 'folder'){ fopen(id, from); return; }
@@ -2880,7 +2940,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dempty(){ return derase(dtrashed().map(function(it){ return it.id; })); }
   function demptyAsk(){
     var n = dtrashed().length; if(!n) return;
-    sheet('Are you sure you want to permanently erase the '+(n === 1 ? 'item' : n+' items')+' in the Trash?', 'You can\u2019t undo this action.', 'Empty Trash', function(){ dempty(); toast('Trash emptied', n === 1 ? '1 item erased.' : n+' items erased.'); });
+    sheet('Are you sure you want to permanently erase the '+(n === 1 ? 'item' : n+' items')+' in the Trash?', 'You can\u2019t undo this action.', 'Empty Trash', function(){ dempty(); toast('Trash emptied', n === 1 ? '1 item erased' : n+' items erased'); });
   }
   function trashLook(){ var tk = $('#dock .dk.trash'); if(!tk) return; var full = dtrashed().length > 0; tk.classList.toggle('full', full); var u = $('.tile use', tk); if(u && !u.hasAttribute('data-h0')) u.setAttribute('href', full ? '#i-trash-full' : '#i-trash'); else if(u) u.setAttribute('data-h0', full ? '#i-trash-full' : '#i-trash'); }
   /* ---------- folder and Trash windows: Finder-style icon views ---------- */
@@ -3045,7 +3105,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(drop.kind === 'trash'){ sink(); dtrash(st.ids); unhide(); return; }
     if(drop.kind === 'folder'){ sink(); var n = dmove(st.ids, drop.id); unhide(); if(n && drop.id === '' && !dview('icons')) dviewSet('icons', true); if(n){ var f = $('.dicon[data-id="'+drop.id+'"]', DLAYER); if(f){ f.classList.remove('flash'); void f.offsetWidth; f.classList.add('flash'); } } return; }
     if(drop.kind === 'dock'){ var added = [], at = dockGapIndex(); dockGapClear(true); st.ids.forEach(function(id){ var it = d.items[id]; if(it && it.kind === 'app' && !dockHas(it.app)){ dockPin(it.app, true, at >= 0 ? at++ : -1); added.push(APPS[it.app].title); } else if(it && it.kind === 'app'){ dockBounce(it.app); } });
-      if(added.length) toast(added.length === 1 ? added[0]+' is in the Dock' : added.length+' apps added to the Dock', 'Right-click it there for options.');
+      if(added.length) toast(added.length === 1 ? added[0]+' is in the Dock' : added.length+' apps added to the Dock');
       snapBack(); return; }
     if(drop.kind === 'desk' && !(from === '' && dview('sort') !== 'grid')){
       var g = dgrid(), dr = desk.getBoundingClientRect(), taken = {}, moving = {}, anchorEl = st.sel[0], ar = anchorEl.getBoundingClientRect();
@@ -3190,13 +3250,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var l = dockList(); if(l.indexOf(app) > -1 || app === 'den'){ dockBounce(app); return false; }
     if(!(at >= 0 && at <= l.length)) at = l.length;
     l.splice(at, 0, app); dockSave(l); dockBuild(); dockPop(app);
-    if(!quiet) toast(APPS[app].title+' is in the Dock', isMobile() ? 'Hold it there for options.' : 'Drag it to move it, or right-click it for options.');
+    if(!quiet) toast(APPS[app].title+' is in the Dock');
     return true;
   }
   /* Remove from Dock: a running app steps over to the running section and stays open; the last app always stays */
   function dockUnpin(app, quiet){
     var l = dockList(), i = l.indexOf(app); if(i < 0) return false;
-    if(l.length < 2){ toast('The Dock needs at least one app', 'Keep another app in the Dock first.'); dockBounce(app); return false; }
+    if(l.length < 2){ toast('The Dock needs at least one app'); dockBounce(app); return false; }
     l.splice(i, 1); dockSave(l);
     var b = $('#dock .dk.pin[data-dock="'+app+'"]');
     if(b && !WM.wins[app] && !quiet && PREF.motion !== 'off'){ b.classList.add('dk-out'); setTimeout(dockBuild, 230); } else dockBuild();
@@ -3205,7 +3265,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function dockReset(){
     delete DK().dock; deskSave();
     PREF.dock = 'md'; PREF.dockpos = 'bottom'; PREF.dockhide = 'off'; PREF.dockmag = 'on'; applyPrefs(); petUIs();
-    dockBuild(); toast('Dock reset', 'The default apps, size and position are back.');
+    dockBuild(); toast('Dock reset');
   }
   function dockResetAsk(){ sheet('Reset the Dock?', 'The default apps come back in their usual order, at the usual size and position. Your desktop stays as it is.', 'Reset Dock', dockReset); }
   /* Open at Login: opened, a beat apart, once the desktop is up after a boot or a log in */
@@ -3309,13 +3369,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       dockPuff(r.left + r.width/2, r.top + r.height/2);
       gh.classList.add('poof'); setTimeout(function(){ gh.remove(); }, 260);
       dockUnpin(st.id, true);
-      if(!WM.wins[st.id]) toast(APPS[st.id].title+' removed from the Dock', 'Find it again with \u2318K, or right-click the Dock to reset it.');
+      if(!WM.wins[st.id]) toast(APPS[st.id].title+' removed from the Dock');
       return;
     }
     /* nowhere to go (a running app dropped off the dock, or the last app): put it back where it was */
     dockFlip(function(){ if(!DGAP.isConnected) dock.insertBefore(DGAP, b); });
     land(DGAP, function(){ b.classList.remove('dk-away'); DGAP.remove(); });
-    if(st.pinned) toast('The Dock needs at least one app', 'Keep another app in the Dock first.');
+    if(st.pinned) toast('The Dock needs at least one app');
   }
   $('#dock').addEventListener('pointerdown', function(e){
     if(e.button !== 0 || e.ctrlKey || e.pointerType === 'touch' || isMobile() || CTX.stack.length) return;
@@ -3394,10 +3454,10 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
      small enough for the embed's cookie fallback. A note made from the desktop, a folder or Den is saved there at once; New Note inside
      Jot first asks for a name, a place and a starting template. Typing saves as you go, and a note still called untitled takes its name
      from its first line. The text never leaves this browser unless Download or Send to Chase takes it, so both are always one click away.
-     The editor writes Markdown the way a word processor behaves (Enter carries a list on, Tab indents it, Cmd+B and Cmd+I wrap the word
-     under the caret, a small format bar for the rest) and Preview sets it. Phones have no Jot. */
+     The editor sets the Markdown as you type, like a word processor (Enter carries a list on, Tab indents it, Cmd+B and Cmd+I wrap the
+     word under the caret, a small format bar for the rest): see the editor below. Phones have no Jot. */
   var NOTE_EXT = /\.(txt|md|markdown|text)$/i;
-  var JOT = { id:null, user:'', prev:false, t:0, pend:null, err:false, warned:false, want:null };
+  var JOT = { id:null, user:'', t:0, pend:null, err:false, warned:false, want:null };
   /* ---------- the text store ---------- */
   function NB(user){
     if(!NB.s){ var s = null; try { s = JSON.parse(localStorage.getItem('tigos.notes') || '{}'); } catch(e){} NB.s = s && typeof s === 'object' && !Array.isArray(s) ? s : {}; }
@@ -3411,9 +3471,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function nforget(ids){ if(!ids || !ids.length) return; var u = NB(), n = 0; ids.forEach(function(id){ if(id in u){ delete u[id]; n++; } }); if(n) nsave(); }
   function ncut(s, n){ s = String(s || '').slice(0, n); return /[\ud800-\udbff]$/.test(s) ? s.slice(0, -1) : s; }   /* never split an emoji in two */
   function nwords(t){ t = String(t || '').trim(); return t ? t.split(/\s+/).length : 0; }
-  /* ---------- names: always with an extension (.txt unless it is .md), never clashing in one place ---------- */
-  function nname(v){ v = String(v || '').replace(/[\/\\:]/g, '-').replace(/\s+/g, ' ').trim(); if(!v || NOTE_EXT.test(v) && !v.replace(NOTE_EXT, '').trim()) v = 'untitled'; if(!NOTE_EXT.test(v)) v = ncut(v, 36).trim()+'.txt'; return ncut(v, 40); }
-  function nsplit(n){ var m = String(n || '').match(NOTE_EXT); return m ? { base:n.slice(0, n.length - m[0].length), ext:m[0] } : { base:n || 'untitled', ext:'.txt' }; }
+  /* ---------- names: exactly what was typed (an extension is optional: "plan" stays "plan"), never clashing in one place ---------- */
+  function nname(v){ v = String(v || '').replace(/[\/\\:]/g, '-').replace(/\s+/g, ' ').trim(); if(!v || /^\.+$/.test(v) || NOTE_EXT.test(v) && !v.replace(NOTE_EXT, '').trim()) v = 'untitled.txt'; return ncut(v, 40).trim(); }
+  function nsplit(n){ var m = String(n || '').match(NOTE_EXT); return m ? { base:n.slice(0, n.length - m[0].length), ext:m[0] } : { base:n || 'untitled', ext:'' }; }
   function nnameNew(name, where, skip){ var p = nsplit(nname(name)), n = p.base+p.ext, i = 2; while(!dnameFree(n, where, skip)) n = p.base+' '+(i++)+p.ext; return n; }
   function ntitleOf(text){ var l = String(text || '').split('\n').map(function(x){ return x.replace(/^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+|>\s*)/, '').replace(/[*_`~#\[\]]/g, '').trim(); }).filter(Boolean)[0] || ''; return ncut(l, 32).trim(); }
   /* a note by name, for the Terminal (open, cat): "groceries", "groceries.txt" or with quotes */
@@ -3456,15 +3516,14 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     w.el.classList.add('jot-win');
     var tb = function(k, icon, label, text){ return '<button type="button" data-jot="'+k+'" aria-label="'+label+'" title="'+label+'">'+ic(icon)+(text ? '<span>'+text+'</span>' : '')+'</button>'; };
     var fb = function(k, icon, label){ return '<button type="button" data-fmt="'+k+'" aria-label="'+label+'" title="'+label+'">'+ic(icon)+'</button>'; };
-    w.tools.innerHTML = tb('new', 'plus', 'New Note', 'New')+tb('prev', 'eye', 'Preview', 'Preview')+tb('dl', 'download', 'Download a copy')+tb('up', 'upload', 'Open a text file from your computer')+tb('mail', 'mail', 'Send this note to Chase');
+    w.tools.innerHTML = tb('new', 'plus', 'New Note', 'New')+tb('dl', 'download', 'Download a copy')+tb('up', 'upload', 'Open a text file from your computer')+tb('mail', 'mail', 'Send this note to Chase');
     w.body.innerHTML = '<div class="jotw">'+
       '<aside class="jot-side"><div class="jot-list" role="listbox" aria-label="Notes"></div><button type="button" class="jot-den">'+ic('den')+'Show in Den</button></aside>'+
       '<section class="jot-doc">'+
         '<div class="jot-head"><input class="jot-name" type="text" maxlength="40" spellcheck="false" aria-label="Name"><label class="jot-wl">in <select class="jot-where" aria-label="Where it is saved"></select></label></div>'+
         '<div class="jot-bar" role="toolbar" aria-label="Format">'+fb('head', 'head', 'Heading')+fb('bold', 'bold', 'Bold (\u2318B)')+fb('italic', 'italic', 'Italic (\u2318I)')+fb('list', 'list', 'Bulleted list')+fb('check', 'check', 'Checklist')+fb('link', 'link', 'Link (\u2318K)')+'</div>'+
-        '<textarea class="jot-text" spellcheck="true" maxlength="100000" aria-label="Note" placeholder="Start writing. Markdown works too: # for a heading, - for a list, - [ ] for a to-do."></textarea>'+
-        '<div class="jot-prev jot-md" hidden></div>'+
-        '<div class="jot-empty" hidden><span class="tile jot">'+ic('jot')+'</span><b>No notes yet</b><p>Write one here, right-click the desktop for New Note, or drop a text file on this window.</p><button type="button" class="jot-go" data-jot="new">New Note</button></div>'+
+        '<div class="jot-text" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" aria-label="Note" data-ph="Start writing. # for a heading, - for a list, [] for a to-do"></div>'+
+        '<div class="jot-empty" hidden><span class="tile jot">'+ic('jot')+'</span><b>No notes yet</b><p>Right-click the desktop for New Note, or drop a text file here.</p><button type="button" class="jot-go" data-jot="new">New Note</button></div>'+
         '<div class="jot-foot"><span class="jot-count"></span><span class="jot-state"></span></div>'+
       '</section>'+
       '<input class="jot-file" type="file" accept=".txt,.md,.markdown,.text,text/plain,text/markdown" multiple hidden>'+
@@ -3473,7 +3532,6 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     $$('[data-jot]', w.el).forEach(function(b){ b.addEventListener('click', function(){
       var k = b.getAttribute('data-jot');
       if(k === 'new') jotNewAsk();
-      if(k === 'prev'){ JOT.prev = !JOT.prev; jotPrev(); }
       if(k === 'dl' && JOT.id) jotDownload(JOT.id);
       if(k === 'mail' && JOT.id) jotMail(JOT.id);
       if(k === 'up') file.click();
@@ -3485,8 +3543,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     file.addEventListener('change', function(){ nimport(file.files, '', null, function(made){ jotLoad(made[made.length - 1].id); }); file.value = ''; });
     q('.jot-list').addEventListener('click', function(e){ var b = e.target.closest('[data-note]'); if(b && b.getAttribute('data-note') !== JOT.id) jotLoad(b.getAttribute('data-note')); });
     q('.jot-den').addEventListener('click', function(){ var it = JOT.id && ditem(JOT.id); denOpen(it ? dinside(it) : '', it ? it.id : null); });
-    ta.addEventListener('input', jotDirty);
-    ta.addEventListener('keydown', function(e){ jkeys(ta, e); });
+    jedMake(ta);
+    ta.addEventListener('input', function(e){ if(!e.isTrusted) jotDirty(); });   /* the editor reports each edit itself, once it is in the model */
     var commit = function(){ var it = JOT.id && ditem(JOT.id); if(!it) return; var v = nm.value.replace(/\s+/g, ' ').trim(); if(!v){ nm.value = it.name; return; } v = nname(v); if(v === it.name){ nm.value = v; return; }
       if(!dnameFree(v, dinside(it), it.id)){ toast('The name \u201c'+v+'\u201d is already taken', 'Please choose a different name.'); nm.value = it.name; return; }
       it.name = v; delete it.auto; nm.value = v; deskSave(); drender(); winTitles(); };
@@ -3508,8 +3566,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     ['.jot-head', '.jot-bar', '.jot-foot'].forEach(function(s){ q(s).hidden = !it; });
     ta.hidden = !it;
     if(it){ ta.value = nbody(it.id); ta.scrollTop = 0; q('.jot-name').value = it.name; }
-    $$('[data-jot="dl"], [data-jot="mail"], [data-jot="prev"]', w.tools).forEach(function(b){ b.disabled = !it; });
-    jotWhere(); jotList(); jotTitle(); jotFoot(); jotPrev();
+    $$('[data-jot="dl"], [data-jot="mail"]', w.tools).forEach(function(b){ b.disabled = !it; });
+    jotWhere(); jotList(); jotTitle(); jotFoot();
   }
   /* any change to the desktop (a rename, a move, the Trash) reaches the open note */
   function jotSync(){
@@ -3538,16 +3596,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   }
   function jotFoot(){
     var w = WM.wins.jot; if(!w) return; var ta = $('.jot-text', w.body), c = $('.jot-count', w.body), s = $('.jot-state', w.body); if(!ta || !c) return;
-    var n = nwords(ta.value); c.textContent = (n === 1 ? '1 word' : n+' words');
-    s.textContent = !nstoreOk() ? 'This browser won\u2019t keep notes. Download to keep a copy.' : JOT.err ? 'Not saved: this browser is out of room. Download a copy.' : JOT.pend ? 'Saving\u2026' : 'Saved in this browser \u00b7 Download to keep a copy';
+    var n = nwords(jplain(ta.value)); c.textContent = (n === 1 ? '1 word' : n+' words');
+    s.textContent = !nstoreOk() ? 'This browser won\u2019t keep notes. Download to keep a copy.' : JOT.err ? 'Not saved: this browser is out of room. Download a copy.' : JOT.pend ? 'Saving\u2026' : 'Saved in this browser';
     s.classList.toggle('bad', !nstoreOk() || JOT.err);
-  }
-  function jotPrev(){
-    var w = WM.wins.jot; if(!w) return; var ta = $('.jot-text', w.body), pv = $('.jot-prev', w.body), bar = $('.jot-bar', w.body), b = $('[data-jot="prev"]', w.tools), on = JOT.prev && !!JOT.id;
-    if(b){ b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.classList.toggle('on', on); }
-    if(!JOT.id) return;
-    ta.hidden = on; pv.hidden = !on; bar.classList.toggle('jb-off', on);
-    if(on){ pv.innerHTML = jmd(ta.value); $$('.jbox', pv).forEach(function(x){ x.addEventListener('click', function(){ jtick(ta, +x.closest('[data-ln]').getAttribute('data-ln')); jotPrev(); }); }); }
   }
   /* typing saves after a short pause; closing, switching notes or Cmd+S saves at once */
   function jotDirty(){ var w = WM.wins.jot; if(!w || !JOT.id) return; clearTimeout(JOT.t); JOT.pend = { id:JOT.id, user:JOT.user, ta:$('.jot-text', w.body) }; JOT.t = setTimeout(jotFlush, 400); jotFoot(); }
@@ -3555,9 +3606,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     clearTimeout(JOT.t); var p = JOT.pend; JOT.pend = null; if(!p) return;
     var d = DESKS[p.user], it = d && d.items && d.items[p.id]; if(!it) return;
     var v = p.ta.value, ok = nbodySet(p.id, v, p.user); it.m = Date.now();
-    if(it.auto){ var t = ntitleOf(v); if(t && p.user === USER.name){ var nn = nnameNew(t, dinside(it), it.id); if(nn !== it.name) it.name = nn; } }
+    if(it.auto){ var t = ntitleOf(v); if(t && p.user === USER.name){ var nn = nnameNew(t+nsplit(it.name).ext, dinside(it), it.id); if(nn !== it.name) it.name = nn; } }
     deskSave(); JOT.err = !ok;
-    if(!ok && !JOT.warned){ JOT.warned = true; toast('Jot couldn\u2019t save', 'This browser is out of room for notes. Download a copy to keep it.'); }
+    if(!ok && !JOT.warned){ JOT.warned = true; toast('Jot couldn\u2019t save', 'Out of room. Download a copy to keep it.'); }
     if(p.user === USER.name){ drender(); winTitles(); }
     jotFoot();
   }
@@ -3586,8 +3637,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var make = function(){
       var v = name.value.replace(/\s+/g, ' ').trim(), named = v && nname(v) !== 'untitled.txt';
       var t = JOT_TPL.filter(function(x){ return x[0] === tpl; })[0], it = jotCreate(pick, null, t ? t[2]() : '', named ? v : null); pick = it.in || '';
-      done(); jotLoad(it.id); if(JOT.prev){ JOT.prev = false; jotPrev(); } jotFocus();
-      toast(it.name+' saved', 'In '+(pick ? ditem(pick).name : 'the Desktop')+'. It saves as you type.');
+      done(); jotLoad(it.id); jotFocus();
+      toast(it.name+' saved', 'In '+(pick ? ditem(pick).name : 'the Desktop'));
     };
     list.addEventListener('click', function(e){ var b = e.target.closest('[data-w]'); if(!b) return; pick = b.getAttribute('data-w'); drawWhere(); });
     list.addEventListener('dblclick', function(e){ if(e.target.closest('[data-w]')) make(); });
@@ -3608,15 +3659,15 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function jotDownload(id){
     var it = ditem(id); if(!it) return; if(JOT.id === id) jotFlush();
     var md = /\.(md|markdown)$/i.test(it.name), b = new Blob([nbody(id)], { type:(md ? 'text/markdown' : 'text/plain')+';charset=utf-8' }), u = URL.createObjectURL(b), a = document.createElement('a');
-    a.href = u; a.download = it.name; a.rel = 'noopener'; root.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(u); }, 4000);
-    toast('Downloading '+it.name, 'A copy to keep outside this browser.');
+    a.href = u; a.download = /\.[^.\s]+$/.test(it.name) ? it.name : it.name+'.txt'; a.rel = 'noopener'; root.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(u); }, 4000);
+    toast('Downloading '+it.name);
   }
   function jotMail(id){
     var it = ditem(id); if(!it) return; if(JOT.id === id) jotFlush();
     var C = TIG.contact, full = nbody(id), long = full.length > 1800, body = long ? ncut(full, 1800).replace(/\s+\S*$/, '')+'\n\n[The rest of this note is on my clipboard.]' : full;
     if(long){ try { navigator.clipboard.writeText(full).catch(function(){}); } catch(e){} }
     var a = document.createElement('a'); a.href = 'mailto:'+C.email+'?subject='+encodeURIComponent('A note for Chase: '+nsplit(it.name).base)+'&body='+encodeURIComponent(body); root.appendChild(a); a.click(); a.remove();
-    toast('Opening your email app', long ? 'The note is long, so the full text is on your clipboard to paste in.' : 'Addressed to '+C.email+'.');
+    toast('Opening your email app', long ? 'The full text is on your clipboard' : 'To '+C.email);
   }
   function noteActions(id){ return [{ t:'Download a Copy', i:'download', fn:function(){ jotDownload(id); } }, { t:'Send to Chase', i:'mail', fn:function(){ jotMail(id); } }]; }
   /* ---------- in from the computer: drop text files on the desktop, a folder, Den or Jot, or use Open in Jot ---------- */
@@ -3624,9 +3675,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var list = Array.prototype.slice.call(files || []), made = [], skip = 0, big = 0, done = 0, n = Math.min(list.length, 12);
     if(!n) return;
     var fin = function(){ if(++done < n) return;
-      var place = made.length && made[0].in ? ditem(made[0].in).name : 'the Desktop', extra = (skip ? ' Jot opens text files (.txt, .md); '+skip+' skipped.' : '')+(big ? ' '+big+' over 256 KB left out.' : '');
-      if(made.length) toast(made.length === 1 ? made[0].name+' added to '+place : made.length+' notes added to '+place, (made.length === 1 ? 'Double-click it to open.' : '')+extra);
-      else toast('Nothing added', extra.trim() || 'Jot opens text files (.txt, .md).');
+      var place = made.length && made[0].in ? ditem(made[0].in).name : 'the Desktop', extra = (skip ? ' '+skip+' skipped, not .txt or .md.' : '')+(big ? ' '+big+' over 256 KB left out.' : '');
+      if(made.length) toast(made.length === 1 ? made[0].name+' added to '+place : made.length+' notes added to '+place, extra.trim());
+      else toast('Nothing added', extra.trim() || 'Only .txt and .md files');
       if(made.length && then) then(made);
     };
     list.slice(0, n).forEach(function(f){
@@ -3655,7 +3706,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   root.addEventListener('dragleave', function(e){ if(!e.relatedTarget || !root.contains(e.relatedTarget)) fileHi(null); });
   root.addEventListener('drop', function(e){
     if(!hasFiles(e)) return; e.preventDefault(); fileHi(null);
-    var tg = fileTarget(e.target); if(!tg){ if(!isPhone()) toast('Drop text files on the desktop', 'Or on a folder, Den or Jot.'); return; }
+    var tg = fileTarget(e.target); if(!tg){ if(!isPhone()) toast('Drop text files on the desktop', 'Or on a folder, Den or Jot'); return; }
     var rr = root.getBoundingClientRect(), at = tg.at && !isMobile() ? deskXY(e.clientX - rr.left, e.clientY - rr.top) : null;
     nimport(e.dataTransfer.files, tg.where, at, function(made){ if(tg.open) jotOpen(made[made.length - 1].id); else if(!tg.where) dflash(made[made.length - 1].id); });
   });
@@ -3667,13 +3718,222 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var w = WM.wins.jot; if(!w || w.min || !w.el.classList.contains('focus')) return;
     e.preventDefault(); jotFlush(); var s = $('.jot-state', w.body); if(s){ s.classList.remove('flash'); void s.offsetWidth; s.classList.add('flash'); }
   });
-  /* ---------- the editor: Markdown that behaves like a word processor ---------- */
-  function jput(ta, s, e, str, s2, e2){   /* replace a range so Cmd+Z can undo it */
-    ta.focus(); ta.setSelectionRange(s, e); var ok = false;
-    try { ok = document.execCommand('insertText', false, str); } catch(x){}
-    if(!ok || ta.value.slice(s, s + str.length) !== str){ ta.setRangeText(str, s, e, 'end'); ta.dispatchEvent(new Event('input', { bubbles:true })); }
-    ta.setSelectionRange(s2, e2 == null ? s2 : e2);
+  /* ---------- the editor: Markdown set as you type ----------
+     The note's text is the model, and it stays plain Markdown (Terminal reads and writes the same text). The editor is a contenteditable
+     with one .jl row per line, drawn from the model: a heading is big, **bold** is bold, - is a bullet and - [ ] a box to tick. The
+     marks themselves (# and the asterisks) show, faintly, only on the line being edited. Every edit goes through the model (beforeinput),
+     so the page never drifts from the text; an IME or anything unexpected is read back from the page. The element answers value,
+     selectionStart, selectionEnd, setSelectionRange and select like the textarea it replaced, which the format bar, menus and Terminal use. */
+  var JMAX = 100000;
+  var JRX = { h:/^(#{1,6})(\s+)(.*)$/, ck:/^(\s*)([-*+]\s+\[[ xX]\])(\s+)(.*)$/, ul:/^(\s*)([-*+])(\s+)(.*)$/, ol:/^(\s*)(\d+[.)])(\s+)(.*)$/, q:/^(>\s?)(.*)$/, hr:/^\s*([-*_])(\s*\1){2,}\s*$/, fence:/^\s*```/ };
+  function jmk(t, c){ return '<span class="mk '+c+'">'+esc(t)+'</span>'; }
+  /* inline marks; every character of the line stays in the page, in order, so the text read back is the text drawn */
+  function jinl(s){
+    var re = /`([^`]+)`|\[([^\]]+)\]\(([^\s)]*)\)|\*\*([^*\s](?:[^*]*?[^*\s])?)\*\*|__([^_\s](?:[^_]*?[^_\s])?)__|~~([^~\s](?:[^~]*?[^~\s])?)~~|(^|[^\w*])\*([^*\s](?:[^*]*?[^*\s])?)\*(?![\w*])|(^|[^\w_])_([^_\s](?:[^_]*?[^_\s])?)_(?![\w_])/g;
+    var out = '', last = 0, m;
+    while((m = re.exec(s))){
+      out += esc(s.slice(last, m.index))+esc(m[8] != null ? m[7] : m[10] != null ? m[9] : '');
+      if(m[1] != null) out += jmk('`', 'mi')+'<code>'+esc(m[1])+'</code>'+jmk('`', 'mi');
+      else if(m[2] != null){ var ok = /^(https?:\/\/|mailto:)\S+$/i.test(m[3]); out += jmk('[', 'mi')+'<span class="jlk'+(ok ? ' ok' : '')+'"'+(ok ? ' data-u="'+esc(m[3])+'" title="\u2318-click to open"' : '')+'>'+jinl(m[2])+'</span>'+jmk(']('+m[3]+')', 'mi'); }
+      else if(m[4] != null) out += jmk('**', 'mi')+'<strong>'+jinl(m[4])+'</strong>'+jmk('**', 'mi');
+      else if(m[5] != null) out += jmk('__', 'mi')+'<strong>'+jinl(m[5])+'</strong>'+jmk('__', 'mi');
+      else if(m[6] != null) out += jmk('~~', 'mi')+'<del>'+jinl(m[6])+'</del>'+jmk('~~', 'mi');
+      else if(m[8] != null) out += jmk('*', 'mi')+'<em>'+jinl(m[8])+'</em>'+jmk('*', 'mi');
+      else out += jmk('_', 'mi')+'<em>'+jinl(m[10])+'</em>'+jmk('_', 'mi');
+      last = re.lastIndex;
+    }
+    return out+esc(s.slice(last));
   }
+  function jkinds(L){
+    var fence = false;
+    return L.map(function(l){
+      if(JRX.fence.test(l)){ fence = !fence; return 'fence'; }
+      if(fence) return 'code';
+      if(!l) return 'blank';
+      var h = l.match(JRX.h); if(h) return 'h'+Math.min(3, h[1].length);
+      if(JRX.hr.test(l)) return 'hr';
+      var c = l.match(JRX.ck); if(c) return /x/i.test(c[2]) ? 'ckx' : 'ck';
+      return JRX.ul.test(l) ? 'ul' : JRX.ol.test(l) ? 'ol' : JRX.q.test(l) ? 'q' : 'p';
+    });
+  }
+  function jline(l, k){
+    var m, x, ind = function(sp){ return sp ? '<span class="ind">'+esc(sp)+'</span>' : ''; };
+    if(k === 'blank') return '<div class="jl k-blank"><br></div>';
+    if(k === 'fence') x = jmk(l, 'mf');
+    else if(k === 'code') x = esc(l);
+    else if(k === 'hr') x = jmk(l, 'mr');
+    else if(/^h\d$/.test(k)){ m = l.match(JRX.h); x = jmk(m[1]+m[2], 'mh')+jinl(m[3]); }
+    else if(k === 'ck' || k === 'ckx'){ m = l.match(JRX.ck); x = ind(m[1])+jmk(m[2]+m[3], 'mc')+'<span class="ct">'+jinl(m[4])+'</span>'; }
+    else if(k === 'ul'){ m = l.match(JRX.ul); x = ind(m[1])+jmk(m[2]+m[3], 'mb')+jinl(m[4]); }
+    else if(k === 'ol'){ m = l.match(JRX.ol); x = ind(m[1])+'<span class="mn">'+esc(m[2]+m[3])+'</span>'+jinl(m[4]); }
+    else if(k === 'q'){ m = l.match(JRX.q); x = jmk(m[1], 'mq')+jinl(m[2]); }
+    else x = jinl(l);
+    return '<div class="jl k-'+k+'">'+(x || '<br>')+'</div>';
+  }
+  /* redraw only the rows that changed: the unchanged head and tail of the note keep their nodes */
+  function jedDraw(E){
+    var el = E.el, L = E.v.split('\n'), K = jkinds(L), O = E.lines, OK = E.kinds, kids = el.children;
+    if(kids.length !== O.length){ el.innerHTML = L.map(function(l, i){ return jline(l, K[i]); }).join(''); }
+    else {
+      var n = Math.min(L.length, O.length), a = 0, b = 0;
+      while(a < n && L[a] === O[a] && K[a] === OK[a]) a++;
+      while(b < n - a && L[L.length - 1 - b] === O[O.length - 1 - b] && K[L.length - 1 - b] === OK[O.length - 1 - b]) b++;
+      for(var r = O.length - b - 1; r >= a; r--) el.removeChild(kids[r]);
+      if(L.length - b > a){ var t = document.createElement('template'), html = ''; for(var i = a; i < L.length - b; i++) html += jline(L[i], K[i]); t.innerHTML = html; el.insertBefore(t.content, kids[a] || null); }
+    }
+    E.lines = L; E.kinds = K; E.starts = []; for(var j = 0, at = 0; j < L.length; j++){ E.starts.push(at); at += L[j].length + 1; }
+    E.cur = null;
+    el.classList.toggle('blank', E.v === '');
+  }
+  /* page point <-> text offset */
+  function jedOff(E, node, off){
+    var el = E.el, kids = el.children;
+    if(node === el) return off >= kids.length ? E.v.length : E.starts[off] || 0;
+    var line = node; while(line && line.parentNode !== el) line = line.parentNode;
+    var i = line ? Array.prototype.indexOf.call(kids, line) : -1; if(i < 0 || E.starts[i] == null) return null;
+    var r = document.createRange(); r.selectNodeContents(line); try { r.setEnd(node, off); } catch(x){ return E.starts[i]; }
+    return E.starts[i]+Math.min(r.toString().length, E.lines[i].length);
+  }
+  function jedLineOf(E, p){ var S = E.starts, lo = 0, hi = S.length - 1; while(lo < hi){ var mid = (lo + hi + 1) >> 1; if(S[mid] <= p) lo = mid; else hi = mid - 1; } return lo; }
+  function jedPoint(E, p){
+    var i = jedLineOf(E, p), line = E.el.children[i]; if(!line) return { n:E.el, o:0 };
+    var want = p - E.starts[i], w = document.createTreeWalker(line, NodeFilter.SHOW_TEXT), t, acc = 0, last = null;
+    while((t = w.nextNode())){ if(acc + t.data.length >= want) return { n:t, o:want - acc }; acc += t.data.length; last = t; }
+    return last ? { n:last, o:last.data.length } : { n:line, o:0 };
+  }
+  function jedReadSel(E){
+    var sel = window.getSelection(); if(!sel || !sel.rangeCount || E.comp) return;
+    var a = sel.anchorNode, f = sel.focusNode; if(!a || !f || !E.el.contains(a) || !E.el.contains(f)) return;
+    var x = jedOff(E, a, sel.anchorOffset), y = jedOff(E, f, sel.focusOffset); if(x == null || y == null) return;
+    E.s = Math.min(x, y); E.e = Math.max(x, y);
+  }
+  /* the rows the caret or selection is on show their marks; nothing does while the editor is not focused */
+  function jedCur(E){
+    var on = document.activeElement === E.el, a = on ? jedLineOf(E, E.s) : -1, b = on ? jedLineOf(E, E.e) : -2;
+    if(E.cur && E.cur[0] === a && E.cur[1] === b) return;
+    var kids = E.el.children; for(var i = 0; i < kids.length; i++){ var c = i >= a && i <= b; if(kids[i].classList.contains('cur') !== c) kids[i].classList.toggle('cur', c); }
+    E.cur = [a, b];
+  }
+  function jedSel(E, s, e){
+    var n = E.v.length; s = Math.max(0, Math.min(n, +s || 0)); e = e == null ? s : Math.max(0, Math.min(n, +e || 0)); if(e < s){ var t = s; s = e; e = t; }
+    E.s = s; E.e = e;
+    if(document.activeElement !== E.el){ jedCur(E); return; }   /* like a textarea that is not focused: remember it, take nothing */
+    jedCur(E);
+    var sel = window.getSelection(), A = jedPoint(E, s), B = s === e ? A : jedPoint(E, e);
+    try { sel.setBaseAndExtent(A.n, A.o, B.n, B.o); } catch(x){}
+    var ln = E.el.children[jedLineOf(E, e)]; if(ln){ var r = ln.getBoundingClientRect(), v = E.el.getBoundingClientRect(); if(r.bottom > v.bottom - 20) E.el.scrollTop += r.bottom - v.bottom + 20; else if(r.top < v.top + 6) E.el.scrollTop -= v.top + 6 - r.top; }
+  }
+  function jedSet(E, v){ E.v = String(v == null ? '' : v).replace(/\r\n?/g, '\n').slice(0, JMAX); E.undo = []; E.redo = []; E.lastK = ''; jedDraw(E); jedSel(E, Math.min(E.s, E.v.length), Math.min(E.e, E.v.length)); }
+  /* one edit: kept for undo (typing and deleting run together until a pause), drawn, the caret placed, Jot told */
+  function jedReplace(E, s, e, str, s2, e2, kind){
+    var v = E.v; s = Math.max(0, Math.min(v.length, s)); e = Math.max(s, Math.min(v.length, e)); str = String(str == null ? '' : str);
+    var room = JMAX - (v.length - (e - s)); if(str.length > room){ str = str.slice(0, Math.max(0, room)); s2 = null; e2 = null; }
+    if(!str && s === e) return;
+    if(document.activeElement === E.el) jedReadSel(E);
+    var now = Date.now();
+    if(!(kind && kind === E.lastK && (kind === 'type' || kind === 'del') && now - E.lastT < 1500)){ E.undo.push({ v:v, s:E.s, e:E.e }); if(E.undo.length > 300) E.undo.shift(); }
+    E.redo = []; E.lastK = kind || ''; E.lastT = now;
+    E.v = v.slice(0, s)+str+v.slice(e);
+    jedDraw(E); jedSel(E, s2 == null ? s + str.length : s2, e2);
+    E.el.dispatchEvent(new Event('input', { bubbles:true }));
+  }
+  function jedHist(E, back){
+    var from = back ? E.undo : E.redo, to = back ? E.redo : E.undo; if(!from.length) return;
+    var h = from.pop(); to.push({ v:E.v, s:E.s, e:E.e }); E.lastK = '';
+    E.v = h.v; jedDraw(E); jedSel(E, h.s, h.e);
+    E.el.dispatchEvent(new Event('input', { bubbles:true }));
+  }
+  /* after an IME (or anything the model did not do itself) the page is the truth: read every row back */
+  function jedFromDOM(E){
+    var el = E.el, sel = window.getSelection(), fN = sel && sel.rangeCount ? sel.focusNode : null, fO = sel ? sel.focusOffset : 0, parts = [], at = 0, caret = null;
+    Array.prototype.slice.call(el.childNodes).forEach(function(n){
+      if(n.nodeType !== 1 && n.nodeType !== 3) return;
+      var t = n.textContent;
+      if(fN && (n === fN || n.contains(fN))){ var r = document.createRange(); r.selectNodeContents(n); try { r.setEnd(fN, fO); caret = at + r.toString().length; } catch(x){} }
+      parts.push(t); at += t.length + 1;
+    });
+    var v = parts.join('\n').slice(0, JMAX); if(v === E.v && caret == null) return;
+    E.undo.push({ v:E.v, s:E.s, e:E.e }); E.redo = []; E.lastK = '';
+    E.v = v; E.lines = []; E.kinds = []; el.innerHTML = ''; jedDraw(E); jedSel(E, caret == null ? v.length : caret);
+    el.dispatchEvent(new Event('input', { bubbles:true }));
+  }
+  function jedChar(v, p, dir){ if(dir < 0){ if(p <= 0) return 0; return p - (/[\udc00-\udfff]/.test(v[p - 1]) && /[\ud800-\udbff]/.test(v[p - 2] || '') ? 2 : 1); } if(p >= v.length) return v.length; return p + (/[\ud800-\udbff]/.test(v[p]) && /[\udc00-\udfff]/.test(v[p + 1] || '') ? 2 : 1); }
+  function jedWord(v, p, dir){
+    var i = p;
+    if(dir < 0){ if(i > 0 && v[i - 1] === '\n') return i - 1; while(i > 0 && /[ \t]/.test(v[i - 1])) i--; while(i > 0 && !/\s/.test(v[i - 1])) i--; return i; }
+    if(i < v.length && v[i] === '\n') return i + 1; while(i < v.length && /[ \t]/.test(v[i])) i++; while(i < v.length && !/\s/.test(v[i])) i++; return i;
+  }
+  function jedMake(el){
+    var E = { el:el, v:'', lines:[], kinds:[], starts:[0], s:0, e:0, undo:[], redo:[], lastK:'', lastT:0, comp:false, down:false, cur:null };
+    el._jed = E;
+    Object.defineProperty(el, 'value', { configurable:true, get:function(){ return E.v; }, set:function(v){ jedSet(E, v); } });
+    Object.defineProperty(el, 'selectionStart', { configurable:true, get:function(){ if(document.activeElement === el) jedReadSel(E); return E.s; } });
+    Object.defineProperty(el, 'selectionEnd', { configurable:true, get:function(){ if(document.activeElement === el) jedReadSel(E); return E.e; } });
+    el.setSelectionRange = function(s, e){ jedSel(E, s, e); };
+    el.select = function(){ jedSel(E, 0, E.v.length); };
+    jedDraw(E);
+    el.addEventListener('beforeinput', function(e){
+      var t = e.inputType || ''; if(E.comp || t === 'insertCompositionText') return;
+      jedReadSel(E); var s = E.s, z = E.e, v = E.v;
+      var target = function(){ var r = e.getTargetRanges ? e.getTargetRanges()[0] : null; if(!r) return null; var a = jedOff(E, r.startContainer, r.startOffset), b = jedOff(E, r.endContainer, r.endOffset); return a == null || b == null ? null : [Math.min(a, b), Math.max(a, b)]; };
+      if(/^insert(Text|ReplacementText|FromPaste|FromDrop|FromYank)$/.test(t)){
+        e.preventDefault();
+        var d = String(e.data != null ? e.data : e.dataTransfer ? e.dataTransfer.getData('text/plain') : '').replace(/\r\n?/g, '\n');
+        if(t !== 'insertText'){ var R = target(); if(R){ s = R[0]; z = R[1]; } }
+        if(t === 'insertText' && d === ' ' && s === z){ var a0 = v.lastIndexOf('\n', s - 1) + 1, pre = v.slice(a0, s); if(/^\s*\[\s?\]$/.test(pre)){ var sp = pre.match(/^\s*/)[0]; jedReplace(E, a0, s, sp+'- [ ] ', a0 + sp.length + 6, null, ''); return; } }   /* [] and a space start a to-do */
+        jedReplace(E, s, z, d, null, null, t === 'insertText' && d.length === 1 && !/\s/.test(d) ? 'type' : '');
+        return;
+      }
+      if(t === 'insertParagraph' || t === 'insertLineBreak'){ e.preventDefault(); jedReplace(E, s, z, '\n', null, null, ''); return; }
+      if(/^delete/.test(t)){
+        e.preventDefault();
+        if(s === z){
+          if(t === 'deleteContentBackward') s = jedChar(v, s, -1);
+          else if(t === 'deleteContentForward') z = jedChar(v, z, 1);
+          else if(t === 'deleteWordBackward') s = jedWord(v, s, -1);
+          else if(t === 'deleteWordForward') z = jedWord(v, z, 1);
+          else if(/Backward$/.test(t)){ var ls = v.lastIndexOf('\n', s - 1) + 1; s = ls < s ? ls : Math.max(0, s - 1); }
+          else if(/Forward$/.test(t)){ var le = v.indexOf('\n', z); z = le < 0 ? v.length : le > z ? le : z + 1; }
+          else { var R2 = target(); if(R2){ s = R2[0]; z = R2[1]; } }
+        }
+        if(s !== z) jedReplace(E, s, z, '', s, null, 'del');
+        return;
+      }
+      if(t === 'historyUndo' || t === 'historyRedo'){ e.preventDefault(); jedHist(E, t === 'historyUndo'); return; }
+      if(t === 'formatBold'){ e.preventDefault(); jwrap(el, '**'); return; }
+      if(t === 'formatItalic'){ e.preventDefault(); jwrap(el, '_'); return; }
+      if(/^format/.test(t)){ e.preventDefault(); return; }   /* no stray <u>, colours or fonts in a text file */
+    });
+    el.addEventListener('input', function(e){ if(e.isTrusted && e.inputType && !E.comp) jedFromDOM(E); });
+    el.addEventListener('compositionstart', function(){ E.comp = true; });
+    el.addEventListener('compositionend', function(){ E.comp = false; setTimeout(function(){ if(!E.comp) jedFromDOM(E); }, 0); });
+    el.addEventListener('keydown', function(e){
+      if(E.comp || e.isComposing) return;
+      var meta = e.metaKey || e.ctrlKey, k = (e.key || '').toLowerCase();
+      if(meta && !e.altKey && (k === 'z' || (k === 'y' && e.ctrlKey && !e.metaKey))){ e.preventDefault(); e.stopPropagation(); jedHist(E, k === 'z' && !e.shiftKey); return; }
+      jkeys(el, e);
+    });
+    el.addEventListener('copy', function(e){ jedReadSel(E); if(E.s === E.e || !e.clipboardData) return; e.preventDefault(); e.clipboardData.setData('text/plain', E.v.slice(E.s, E.e)); });
+    el.addEventListener('cut', function(e){ jedReadSel(E); if(E.s === E.e || !e.clipboardData) return; e.preventDefault(); e.clipboardData.setData('text/plain', E.v.slice(E.s, E.e)); jedReplace(E, E.s, E.e, '', E.s, null, ''); });
+    el.addEventListener('paste', function(e){ if(!e.clipboardData) return; e.preventDefault(); jedReadSel(E); var d = (e.clipboardData.getData('text/plain') || '').replace(/\r\n?/g, '\n'); jedReplace(E, E.s, E.e, d, null, null, ''); });
+    el.addEventListener('dragstart', function(e){ e.preventDefault(); });   /* no dragging text around inside: it would bypass the model */
+    el.addEventListener('drop', function(e){ if(!(e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') > -1)) e.preventDefault(); });
+    /* a box ticks where it is clicked, without moving the caret; Cmd-click follows a link */
+    el.addEventListener('pointerdown', function(e){
+      if(e.button !== 0) return;
+      var bx = e.target.closest && e.target.closest('.mc');
+      if(bx && el.contains(bx)){ e.preventDefault(); jtick(el, Array.prototype.indexOf.call(el.children, bx.closest('.jl'))); return; }
+      var lk = e.target.closest && e.target.closest('.jlk.ok');
+      if(lk && (e.metaKey || e.ctrlKey)){ e.preventDefault(); newTab(lk.getAttribute('data-u')); return; }
+      E.down = true;
+    });
+    el.addEventListener('focus', function(){ setTimeout(function(){ jedReadSel(E); jedCur(E); }, 0); });
+    el.addEventListener('blur', function(){ E.down = false; jedCur(E); });
+    return E;
+  }
+  document.addEventListener('selectionchange', function(){ var el = document.activeElement, E = el && el._jed; if(!E || E.down || E.comp) return; jedReadSel(E); jedCur(E); });
+  document.addEventListener('pointerup', function(){ var el = document.activeElement, E = el && el._jed; if(!E || !E.down) return; E.down = false; jedReadSel(E); jedCur(E); }, true);
+  function jput(ta, s, e, str, s2, e2){ if(ta._jed) jedReplace(ta._jed, s, e, str, s2, e2, ''); }
   function jwrap(ta, mk){
     var v = ta.value, s = ta.selectionStart, e = ta.selectionEnd, L = mk.length;
     if(s === e){ var a = s, b = s; while(a > 0 && /[\w'\u2019-]/.test(v[a - 1])) a--; while(b < v.length && /[\w'\u2019-]/.test(v[b])) b++; s = a; e = b; }   /* no selection: the word under the caret */
@@ -3690,10 +3950,21 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var out = lines.map(function(l){ if(!l.trim() && lines.length > 1) return l; var m = l.match(/^(\s*)(?:#{1,6}\s+|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)?(.*)$/); if(all) return m[1] + m[2]; return kind === 'head' ? add + m[2] : m[1] + add + m[2]; }).join('\n');
     jput(ta, a, b, out, a + out.length);
   }
-  function jtick(ta, ln){ var L = ta.value.split('\n'); if(!(ln >= 0 && ln < L.length)) return; var l = L[ln], m = l.match(/^(\s*[-*+]\s+\[)([ xX])(\]\s)/); if(!m) return; var at = L.slice(0, ln).join('\n').length + (ln ? 1 : 0) + m[1].length; jput(ta, at, at + 1, m[2] === ' ' ? 'x' : ' ', at + 1); }
+  /* tick a to-do on line ln; the caret stays where it was */
+  function jtick(ta, ln){
+    var L = ta.value.split('\n'); if(!(ln >= 0 && ln < L.length)) return; var m = L[ln].match(/^(\s*[-*+]\s+\[)([ xX])(\]\s)/); if(!m) return;
+    var at = L.slice(0, ln).join('\n').length + (ln ? 1 : 0) + m[1].length, E = ta._jed;
+    if(E) jedReplace(E, at, at + 1, m[2] === ' ' ? 'x' : ' ', E.s, E.e, '');
+  }
   function jkeys(ta, e){
     var meta = e.metaKey || e.ctrlKey, k = (e.key || '').toLowerCase();
     if(meta && !e.shiftKey && !e.altKey){ if(k === 'b'){ e.preventDefault(); jwrap(ta, '**'); return; } if(k === 'i'){ e.preventDefault(); jwrap(ta, '_'); return; } if(k === 'k'){ e.preventDefault(); e.stopPropagation(); jlink(ta); return; } }
+    if(e.key === 'Backspace' && !meta && !e.altKey && !e.shiftKey){   /* Backspace right after a bullet, a box, a number or a # takes the whole mark */
+      var vb = ta.value, sb = ta.selectionStart; if(sb !== ta.selectionEnd || !sb) return;
+      var ab = vb.lastIndexOf('\n', sb - 1) + 1, mb = vb.slice(ab, sb).match(/^(\s*)([-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+|>\s?|#{1,6}\s+)$/);
+      if(mb){ e.preventDefault(); jput(ta, ab + mb[1].length, sb, '', ab + mb[1].length); }
+      return;
+    }
     if(e.key === 'Enter' && !e.shiftKey && !meta && !e.altKey && !e.isComposing){   /* Enter carries a list on; Enter on an empty item ends it */
       var v = ta.value, s = ta.selectionStart; if(s !== ta.selectionEnd) return;
       var a = v.lastIndexOf('\n', s - 1) + 1, z = v.indexOf('\n', s); if(z < 0) z = v.length;
@@ -3712,37 +3983,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       if(ls.length === 1) jput(ta, a2, b2, out, Math.max(a2, s2 + d)); else jput(ta, a2, b2, out, a2, a2 + out.length);
     }
   }
-  /* ---------- Preview: a small, safe Markdown (everything is escaped first; links only to http, https or mailto) ---------- */
-  function jinline(s){
-    var keep = [], stash = function(h){ keep.push(h); return '\u0001'+(keep.length - 1)+'\u0002'; };
-    s = s.replace(/`([^`]+)`/g, function(_, c){ return stash('<code>'+c+'</code>'); });
-    s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s)]+)\)/g, function(_, t, u){ return stash('<a href="'+u+'" target="_blank" rel="noopener noreferrer">'+t+'</a>'); });
-    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/__([^_]+)__/g, '<strong>$1</strong>');
-    s = s.replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<em>$2</em>').replace(/(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g, '$1<em>$2</em>');
-    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-    return s.replace(/\u0001(\d+)\u0002/g, function(_, i){ return keep[+i]; });
-  }
-  function jmd(src){
-    var L = String(src || '').replace(/\r\n?/g, '\n').split('\n'), out = [], para = [], list = null, m;
-    var flush = function(){ if(para.length){ out.push('<p>'+para.map(function(x){ return jinline(esc(x)); }).join('<br>')+'</p>'); para = []; } };
-    var open = function(tag, start){ if(list !== tag){ end(); out.push('<'+tag+(start > 1 ? ' start="'+start+'"' : '')+'>'); list = tag; } };
-    var end = function(){ if(list){ out.push('</'+list+'>'); list = null; } };
-    var ind = function(sp){ return ' style="--ind:'+Math.min(6, Math.floor(sp.replace(/\t/g, '  ').length / 2))+'"'; };
-    for(var i = 0; i < L.length; i++){
-      var raw = L[i];
-      if(/^\s*```/.test(raw)){ flush(); end(); var code = []; i++; while(i < L.length && !/^\s*```/.test(L[i])){ code.push(esc(L[i])); i++; } out.push('<pre><code>'+code.join('\n')+'</code></pre>'); continue; }
-      if(!raw.trim()){ flush(); end(); continue; }
-      if((m = raw.match(/^(#{1,3})\s+(.*)$/))){ flush(); end(); out.push('<h'+m[1].length+'>'+jinline(esc(m[2]))+'</h'+m[1].length+'>'); continue; }
-      if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(raw)){ flush(); end(); out.push('<hr>'); continue; }
-      if((m = raw.match(/^>\s?(.*)$/))){ flush(); end(); out.push('<blockquote>'+jinline(esc(m[1]))+'</blockquote>'); continue; }
-      if((m = raw.match(/^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/))){ flush(); open('ul'); var on = m[2] !== ' '; out.push('<li class="jt'+(on ? ' on' : '')+'" data-ln="'+i+'"'+ind(m[1])+'><button type="button" class="jbox" role="checkbox" aria-checked="'+on+'" aria-label="'+(on ? 'Done' : 'To do')+'"></button><span>'+jinline(esc(m[3]))+'</span></li>'); continue; }
-      if((m = raw.match(/^(\s*)[-*+]\s+(.*)$/))){ flush(); open('ul'); out.push('<li'+ind(m[1])+'>'+jinline(esc(m[2]))+'</li>'); continue; }
-      if((m = raw.match(/^(\s*)(\d+)[.)]\s+(.*)$/))){ flush(); open('ol', +m[2]); out.push('<li'+ind(m[1])+'>'+jinline(esc(m[3]))+'</li>'); continue; }
-      end(); para.push(raw);
-    }
-    flush(); end();
-    return out.join('') || '<p class="jot-none">Nothing to preview yet.</p>';
-  }
+  /* the words a person wrote, without the marks (the footer's count) */
+  function jplain(v){ return String(v || '').split('\n').map(function(l){ return l.replace(/^\s*(#{1,6}\s+|[-*+]\s+(\[[ xX]\]\s+)?|\d+[.)]\s+|>\s?)/, '').replace(/^\s*([-*_])(\s*\1){2,}\s*$/, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_~`]+/g, ''); }).join('\n'); }
 /* tigOS core app.js, part 27: menus. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- what each right-click offers ----------------
      One builder per kind of target (27-ctx-menu.js ctxTarget names them). Each returns { items, anchor, src } for ctxShow: items read
@@ -3756,6 +3998,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var old = function(){ var t = document.createElement('textarea'), ok = false; t.value = v; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'; root.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch(e){} t.remove(); done(ok); };
     try { if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(function(){ done(true); }, old); else old(); } catch(e){ old(); }
   }
+  function clip(v){ try { if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(v).catch(function(){}); return; } } catch(e){} var t = document.createElement('textarea'); t.value = v; t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'; root.appendChild(t); t.select(); try { document.execCommand('copy'); } catch(e){} t.remove(); }   /* a quiet copy, for a menu's Copy */
+  function pasteTip(){ toast('Press \u2318V to paste'); }
   function dlResume(){ if(!A.resume_pdf) return; var a = document.createElement('a'); a.href = A.resume_pdf; a.download = 'Chase-Johnston-Resume.pdf'; a.rel = 'noopener'; root.appendChild(a); a.click(); a.remove(); toast('Downloading the resume', 'Chase-Johnston-Resume.pdf'); }
   function newTab(url){ try { window.open(url, '_blank', 'noopener'); } catch(e){} }
   /* type a command into the Terminal, the way a person would */
@@ -3806,27 +4050,43 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     }
     return out;
   }
-  /* ---------- windows: macOS 15's Move & Resize ---------- */
-  function wtile(w, how){
-    var el = w.el; if(!el || isMobile() || el.classList.contains('fs')) return;
-    var a = area(), W = a.x1 - a.x0, H = a.y1, g = 6, r = null;
-    if(how === 'prev'){ if(!w.tilePrev) return; var z = el.style.zIndex; el.classList.add('zooming'); el.style.cssText = w.tilePrev; el.style.zIndex = z; w.tilePrev = null; }
+  /* ---------- windows: macOS 15's Move & Resize, and snapping (07-window-manager.js drags a window to an edge) ---------- */
+  var TILE_KEYS = { left:'\u2303\u2325\u2190', right:'\u2303\u2325\u2192', top:'\u2303\u2325\u2191', bottom:'\u2303\u2325\u2193', tl:'\u2303\u2325U', tr:'\u2303\u2325I', bl:'\u2303\u2325J', br:'\u2303\u2325K', fill:'\u2303\u2325\u21a9', center:'\u2303\u2325C', prev:'\u2303\u2325\u232b' };
+  function tileRect(how, el){
+    var a = area(), W = a.x1 - a.x0, H = a.y1, g = 6, hw = Math.round(W/2), hh = Math.round(H/2);
+    var L = [a.x0 + g, hw - g*1.5], R = [a.x0 + hw + g/2, W - hw - g*1.5], T = [g, hh - g*1.5], B = [hh + g/2, H - hh - g*1.5], F = [g, H - g*2], X = [a.x0 + g, W - g*2];
+    var r = { left:[L[0], F[0], L[1], F[1]], right:[R[0], F[0], R[1], F[1]], top:[X[0], T[0], X[1], T[1]], bottom:[X[0], B[0], X[1], B[1]], tl:[L[0], T[0], L[1], T[1]], tr:[R[0], T[0], R[1], T[1]], bl:[L[0], B[0], L[1], B[1]], br:[R[0], B[0], R[1], B[1]], fill:[X[0], F[0], X[1], F[1]] }[how];
+    if(how === 'center' && el){ var cw = Math.min(el.offsetWidth, W - 2*g), ch = Math.min(el.offsetHeight, H - 2*g); r = [a.x0 + Math.round((W - cw)/2), Math.max(g, Math.round((H - ch)/2)), cw, ch]; }
+    return r ? r.map(Math.round) : null;
+  }
+  function wtile(w, how, before){
+    var el = w.el; if(!el || isMobile() || el.classList.contains('fs') || w.min) return;
+    if(how === 'prev'){ if(!w.tilePrev) return; var z = el.style.zIndex; el.classList.add('zooming'); el.style.cssText = w.tilePrev; el.style.zIndex = z; w.tilePrev = null; w.tiled = ''; }
     else {
-      if(!w.tilePrev) w.tilePrev = w.max ? w.prev : el.style.cssText;
+      var r = tileRect(how, el); if(!r) return;
+      if(!w.tilePrev) w.tilePrev = before || (w.max ? w.prev : el.style.cssText);   /* Return to Previous Size goes back to before the first tile */
       if(w.max){ w.max = false; el.classList.remove('max'); }
-      var half = Math.round(W/2);
-      if(how === 'left') r = [a.x0 + g, g, half - g*1.5, H - g*2];
-      if(how === 'right') r = [a.x0 + half + g/2, g, W - half - g*1.5, H - g*2];
-      if(how === 'top') r = [a.x0 + g, g, W - g*2, Math.round(H/2) - g*1.5];
-      if(how === 'bottom') r = [a.x0 + g, Math.round(H/2) + g/2, W - g*2, H - Math.round(H/2) - g*1.5];
-      if(how === 'fill') r = [a.x0 + g, g, W - g*2, H - g*2];
-      if(how === 'center'){ var cw = Math.min(el.offsetWidth, W - 2*g), ch = Math.min(el.offsetHeight, H - 2*g); r = [a.x0 + Math.round((W - cw)/2), Math.max(g, Math.round((H - ch)/2)), cw, ch]; }
-      if(!r) return;
       el.classList.add('zooming');
-      el.style.left = Math.round(r[0])+'px'; el.style.top = Math.round(r[1])+'px'; el.style.width = Math.round(r[2])+'px'; el.style.height = Math.round(r[3])+'px';
+      el.style.left = r[0]+'px'; el.style.top = r[1]+'px'; el.style.width = r[2]+'px'; el.style.height = r[3]+'px';
+      w.tiled = how === 'center' ? '' : how;
     }
     clearTimeout(w.zoomT); w.zoomT = setTimeout(function(){ el.classList.remove('zooming'); }, 500);
     focus(w);
+  }
+  function tileItems(w){
+    var mob = isMobile(), t = function(how, label, icon){ return { t:label, i:icon, k:mob ? '' : TILE_KEYS[how], on:w.tiled === how, fn:function(){ wtile(w, how); } }; };
+    return [{ h:'Halves' }, t('left', 'Left', 'tile-l'), t('right', 'Right', 'tile-r'), t('top', 'Top', 'tile-t'), t('bottom', 'Bottom', 'tile-b'),
+      { h:'Quarters' }, t('tl', 'Top Left'), t('tr', 'Top Right'), t('bl', 'Bottom Left'), t('br', 'Bottom Right'), '-',
+      t('fill', 'Fill', 'expand'), t('center', 'Center', 'window'), '-',
+      { t:'Return to Previous Size', k:mob ? '' : TILE_KEYS.prev, dis:!w.tilePrev, fn:function(){ wtile(w, 'prev'); } }];
+  }
+  /* the end of every menu inside a window: the app's quick actions, then the window itself */
+  function winTail(w){
+    if(!w) return [];
+    var a = APPS[w.id] || {}, acts = a.sys ? [] : appActions(w.id), game = w.id === 'games', mob = isMobile();
+    return ['-', acts.length && { t:'Quick Actions', i:'skills', sub:acts },
+      !mob && !game && { t:'Move & Resize', i:'window', sub:function(){ return tileItems(w); } },
+      '-', !mob && { t:'Minimize', i:'minus', fn:function(){ minimize(w); } }, { t:'Close Window', i:'close', k:mob ? '' : '\u2318W', fn:function(){ close(w); } }];
   }
   /* ---------- the pet ---------- */
   function petDo(cls, ms){
@@ -3837,7 +4097,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function petSub(){
     var cur = PREF.pet && PETS[PREF.pet] ? PREF.pet : '';
     return [{ t:'None', on:!cur, fn:function(){ var el = petEl(); if(el) petGoodbye(el); } }, '-'].concat(Object.keys(PETS).map(function(k){
-      return { t:PETS[k].name+' the '+PETS[k].label, on:k === cur, fn:function(){ if(k === PREF.pet) return; petSet(k); toast(PETS[k].name+' is out', isMobile() ? 'Bottom right. Drag them wherever you like.' : 'Bottom right. Drag them anywhere, or right-click them.'); } };
+      return { t:PETS[k].name+' the '+PETS[k].label, on:k === cur, fn:function(){ if(k === PREF.pet) return; petSet(k); toast(PETS[k].name+' is out', 'Drag them anywhere'); } };
     })).concat(['-', { t:'Open Pets\u2026', fn:function(){ open('pets'); } }]);
   }
   function wallSub(){
@@ -3866,7 +4126,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   CTX_MENUS.desk = function(tg, x, y){
     var mob = isMobile(), icons = dview('icons'), hero = dview('hero'), sort = dview('sort'), size = dsize(), n = ditems('').length, at = deskXY(x, y);
     dselClear(); DFOCUS = DLAYER;
-    var sortBy = function(v){ dviewSet('sort', v); }, hideTip = mob ? 'Hold the desktop to show them again.' : 'Right-click the desktop to show them again.';
+    var sortBy = function(v){ dviewSet('sort', v); }, hideTip = mob ? 'Hold the desktop to show them' : 'Right-click the desktop to show them';
     var wall = { t:'Change Wallpaper', i:'wall', sub:wallSub }, pet = Object.keys(PETS).length && { t:'Desktop Pet', i:'paw', sub:petSub },
         saver = { t:'Start Screen Saver', i:'moon', sub:function(){ return Object.keys(SAVERS).map(function(k){ return { t:SAVERS[k].name, note:k === PREF.saver ? 'Default' : '', fn:function(){ saverGo(k); } }; }).concat(['-', { t:'Random', fn:function(){ saverGo('random'); } }]); } },
         sets = { t:'Settings\u2026', i:'gear', fn:function(){ open('settings'); } };
@@ -3885,7 +4145,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       { t:'Clean Up By', dis:sort !== 'grid' || !n || !icons, sub:function(){ return [['name', 'Name'], ['kind', 'Kind'], ['date', 'Date Added']].map(function(o){ return { t:o[1], fn:function(){ dcleanUp(o[0]); } }; }); } },
       { t:'Icon Size', i:'expand', sub:function(){ return seg3(size, function(v){ dviewSet('size', v); }, [['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large']]); } },
       '-',
-      icons ? { t:'Hide Desktop Icons', i:'eye-off', fn:function(){ dselClear(); dviewSet('icons', false); toast('Desktop icons hidden', (hero ? 'The welcome text steps aside too. ' : '')+hideTip); } }
+      icons ? { t:'Hide Desktop Icons', i:'eye-off', fn:function(){ dselClear(); dviewSet('icons', false); toast('Desktop icons hidden', hideTip); } }
             : { t:'Show Desktop Icons', i:'eye', fn:function(){ dviewSet('icons', true); } },
       icons && (hero ? { t:'Hide Welcome Text', i:'eye-off', fn:function(){ dviewSet('hero', false); toast('Welcome text hidden', hideTip); } }
                      : { t:'Show Welcome Text', i:'eye', fn:function(){ dviewSet('hero', true); } }),
@@ -3981,7 +4241,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(fixed) items.push({ t:'New Folder', fn:function(){ dnewFolder(null); } }, { t:'New Note', fn:function(){ jotNewIn(''); } }, '-');   /* Den: what the Finder's Dock menu offers */
     items.push({ t:'Options', sub:function(){ return [
       w && !fixed ? { t:'Keep in Dock', on:pinned, fn:function(){ if(pinned) dockUnpin(app); else dockPin(app); } } : null,
-      { t:'Open at Login', on:loginHas(app), fn:function(){ var on = loginToggle(app); toast(on ? a.title+' will open at login' : a.title+' won\u2019t open at login', on ? 'Every time tigOS starts up on this device.' : ''); } },
+      { t:'Open at Login', on:loginHas(app), fn:function(){ var on = loginToggle(app); toast(on ? a.title+' will open at login' : a.title+' won\u2019t open at login', ''); } },
       { t:dalias(app) ? 'Show on Desktop' : 'Add to Desktop', fn:function(){ daddApp(app); } },
       !w && pinned ? '-' : null,
       !w && pinned ? { t:'Remove from Dock', fn:function(){ dockUnpin(app); } } : null
@@ -4002,7 +4262,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       { t:dalias(app) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:function(){ daddApp(app); } },
       dockHas(app) ? { t:'Show in Dock', i:'dock', fn:function(){ dockBounce(app); } } : { t:'Add to Dock', i:'dock', fn:function(){ dockPin(app); } },
       appRemovable(app) && '-',
-      appRemovable(app) && { t:'Move to Trash', i:'trash', fn:function(){ if(appRemove(app)) toast(a.title+' moved to the Trash', 'Put Back reinstalls it, or in Terminal: brew install '+app); } }
+      appRemovable(app) && { t:'Move to Trash', i:'trash', fn:function(){ if(appRemove(app)) toast(a.title+' moved to the Trash', 'Put Back reinstalls it'); } }
     ] };
   };
   /* ---------- Jot: a note in its sidebar, the sidebar itself, and the text (Notes and TextEdit's menus) ---------- */
@@ -4033,7 +4293,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   CTX_MENUS.jotdoc = function(tg){
     var ta = tg.el, s = ta.selectionStart, e = ta.selectionEnd, has = e > s, id = JOT.id, mob = isMobile();
     var back = function(f){ return function(){ try { ta.focus({ preventScroll:true }); } catch(x){ ta.focus(); } ta.setSelectionRange(s, e); f(); }; };   /* the menu took the focus: give the text its caret back, then act */
-    var paste = function(){ var put = function(v){ if(v) jput(ta, s, e, v, s + v.length); }; try { navigator.clipboard.readText().then(put, function(){ toast('Press \u2318V to paste', 'This browser keeps the clipboard to the keyboard.'); }); } catch(x){ toast('Press \u2318V to paste', 'This browser keeps the clipboard to the keyboard.'); } };
+    var paste = function(){ var put = function(v){ if(v) jput(ta, s, e, v, s + v.length); }; try { navigator.clipboard.readText().then(put, pasteTip); } catch(x){ pasteTip(); } };
     return { items:[
       { t:'Cut', k:mob ? '' : '\u2318X', dis:!has, fn:back(function(){ var v = ta.value.slice(s, e), ok = false; try { ok = document.execCommand('cut'); } catch(x){} if(!ok){ try { navigator.clipboard.writeText(v); } catch(x){} jput(ta, s, e, '', s); } }) },
       { t:'Copy', k:mob ? '' : '\u2318C', dis:!has, fn:back(function(){ var ok = false; try { ok = document.execCommand('copy'); } catch(x){} if(!ok){ try { navigator.clipboard.writeText(ta.value.slice(s, e)); } catch(x){} } }) },
@@ -4047,7 +4307,6 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       { t:'Checklist', i:'check', fn:back(function(){ jprefix(ta, 'check'); }) },
       { t:'Add Link', i:'link', k:mob ? '' : '\u2318K', fn:back(function(){ jlink(ta); }) },
       '-',
-      { t:'Preview', i:'eye', fn:function(){ JOT.prev = true; jotPrev(); } },
       { t:'New Note', i:'plus', fn:jotNewAsk },
       id && { t:'Download a Copy', i:'download', fn:function(){ jotDownload(id); } }
     ] };
@@ -4086,12 +4345,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     return { items:[
       { t:'Minimize', i:'minus', fn:function(){ minimize(w); } },
       game ? { t:fs ? 'Exit Full Screen' : 'Enter Full Screen', i:fs ? 'compress' : 'expand', fn:function(){ gameFs(w); } } : { t:w.max ? 'Exit Zoom' : 'Zoom', i:'expand', fn:function(){ zoom(w); } },
-      !game && { t:'Move & Resize', i:'window', sub:function(){ return [
-        { t:'Left', i:'tile-l', fn:function(){ wtile(w, 'left'); } }, { t:'Right', i:'tile-r', fn:function(){ wtile(w, 'right'); } },
-        { t:'Top', i:'tile-t', fn:function(){ wtile(w, 'top'); } }, { t:'Bottom', i:'tile-b', fn:function(){ wtile(w, 'bottom'); } }, '-',
-        { t:'Fill', i:'expand', fn:function(){ wtile(w, 'fill'); } }, { t:'Center', i:'window', fn:function(){ wtile(w, 'center'); } }, '-',
-        { t:'Return to Previous Size', dis:!w.tilePrev, fn:function(){ wtile(w, 'prev'); } }
-      ]; } },
+      !game && { t:'Move & Resize', i:'window', sub:function(){ return tileItems(w); } },
       '-',
       acts.length && { t:'Quick Actions', i:'skills', sub:acts },
       info && { t:'Get Info', i:'info', fn:function(){ infoShow(info); } },
@@ -4118,6 +4372,123 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       { t:'Size', i:'expand', sub:function(){ return seg3(PREF.petsize || 'md', function(v){ setPref('petsize', v); }, [['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large']]); } },
       '-',
       { t:'Send '+pt.name+' Home', i:'close', fn:function(){ petGoodbye(el); } }
+    ] };
+  };
+  /* ---------- text fields anywhere: Spotlight, Settings, a name being typed, the login ---------- */
+  CTX_MENUS.field = function(tg){
+    var f = tg.el, mob = isMobile(), pw = f.type === 'password', ro = f.readOnly || f.disabled, s = 0, e = 0;
+    try { s = f.selectionStart || 0; e = f.selectionEnd || 0; } catch(x){}
+    var has = e > s, txt = has ? String(f.value).slice(s, e) : '';
+    var back = function(fn){ return function(){ try { f.focus({ preventScroll:true }); f.setSelectionRange(s, e); } catch(x){ try { f.focus(); } catch(y){} } fn(); }; };
+    var put = function(v){ try { f.setRangeText(v, f.selectionStart, f.selectionEnd, 'end'); } catch(x){ f.value += v; } f.dispatchEvent(new Event('input', { bubbles:true })); };
+    return { items:[
+      { t:'Cut', k:mob ? '' : '\u2318X', dis:!has || pw || ro, fn:back(function(){ var ok = false; try { ok = document.execCommand('cut'); } catch(x){} if(!ok){ clip(txt); put(''); } }) },
+      { t:'Copy', k:mob ? '' : '\u2318C', dis:!has || pw, fn:back(function(){ var ok = false; try { ok = document.execCommand('copy'); } catch(x){} if(!ok) clip(txt); }) },
+      { t:'Paste', k:mob ? '' : '\u2318V', dis:ro, fn:back(function(){ try { navigator.clipboard.readText().then(function(v){ if(v) put(v); }, pasteTip); } catch(x){ pasteTip(); } }) },
+      '-',
+      { t:'Select All', k:mob ? '' : '\u2318A', dis:!f.value, fn:back(function(){ f.select(); }) }
+    ] };
+  };
+  /* ---------- inside a window ---------- */
+  function selText(){ try { return String(window.getSelection() || '').trim(); } catch(e){ return ''; } }
+  CTX_MENUS.wbody = function(tg){
+    var w = WM.wins[tg.el.dataset.app]; if(!w) return null;
+    var sel = selText(), short = sel.length > 26 ? sel.slice(0, 25).trim()+'\u2026' : sel;
+    return { items:[
+      sel && { t:'Copy', i:'copy', k:isMobile() ? '' : '\u2318C', fn:function(){ clip(sel); } },
+      sel && { t:'Search for \u201c'+short+'\u201d', i:'search', fn:function(){ spotOpen(); spotIn.value = sel.slice(0, 60); spotRender(spotIn.value); } }
+    ].concat(winTail(w)) };
+  };
+  CTX_MENUS.term = function(tg){
+    var w = WM.wins.terminal, sel = selText(), inp = $('#termIn'), mob = isMobile();
+    var into = function(v){ if(!inp) return; try { inp.focus({ preventScroll:true }); } catch(x){} inp.value += v.replace(/\s*\n\s*/g, ' '); inp.dispatchEvent(new Event('input', { bubbles:true })); };
+    return { items:[
+      { t:'Copy', k:mob ? '' : '\u2318C', dis:!sel, fn:function(){ clip(sel); } },
+      { t:'Paste', k:mob ? '' : '\u2318V', fn:function(){ try { navigator.clipboard.readText().then(function(v){ if(v) into(v); }, pasteTip); } catch(x){ pasteTip(); } } },
+      { t:'Select All', k:mob ? '' : '\u2318A', fn:function(){ var b = $('#termBody'); if(!b) return; var r = document.createRange(); r.selectNodeContents(b); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); } },
+      '-',
+      { t:'Clear', i:'close', fn:function(){ termRun('clear'); } }
+    ].concat(winTail(w)) };
+  };
+  CTX_MENUS.href = function(tg){
+    var a = tg.el, href = a.getAttribute('href') || '', mail = /^mailto:/i.test(href), url = a.href, web = /^https?:/i.test(url);
+    return { items:[
+      { t:mail ? 'New Email' : 'Open Link', i:mail ? 'mail' : 'open', fn:function(){ a.click(); } },
+      web && a.target !== '_blank' && { t:'Open Link in New Tab', i:'open', fn:function(){ newTab(url); } },
+      '-',
+      { t:mail ? 'Copy Email Address' : 'Copy Link', i:'copy', fn:function(){ copyText(mail ? decodeURIComponent(href.replace(/^mailto:/i, '').split('?')[0]) : url); } }
+    ] };
+  };
+  function imgSave(src, name){ var a = document.createElement('a'); a.href = src; a.download = name || 'image'; a.rel = 'noopener'; root.appendChild(a); a.click(); a.remove(); }
+  function imgName(src, alt){ var f = String(src).split('?')[0].split('/').pop() || 'image', x = (f.match(/\.[a-z0-9]+$/i) || ['.png'])[0]; return (String(alt || '').replace(/[^\w -]+/g, '').trim().slice(0, 40) || f.replace(/\.[a-z0-9]+$/i, ''))+x; }
+  CTX_MENUS.img = function(tg){
+    var im = tg.el, src = im.currentSrc || im.src, w = tg.win && WM.wins[tg.win.dataset.app]; if(!src) return CTX_MENUS.wbody({ el:tg.win });
+    return { items:[
+      { t:'Open Image in New Tab', i:'open', fn:function(){ newTab(src); } },
+      { t:'Save Image', i:'download', fn:function(){ imgSave(src, imgName(src, im.alt)); } },
+      { t:'Copy Image Address', i:'link', fn:function(){ clip(src); } }
+    ].concat(winTail(w)) };
+  };
+  CTX_MENUS.lb = function(){
+    var im = $('#lbImg'), src = im && (im.currentSrc || im.src);
+    return { items:[
+      { t:'Close', i:'close', k:isMobile() ? '' : 'esc', fn:function(){ lb.hidden = true; } },
+      '-',
+      src && { t:'Open Image in New Tab', i:'open', fn:function(){ newTab(src); } },
+      src && { t:'Save Image', i:'download', fn:function(){ imgSave(src, imgName(src, im.alt)); } }
+    ] };
+  };
+  CTX_MENUS.toast = function(){ return { items:[{ t:'Dismiss', i:'close', fn:function(){ clearTimeout(toastT); toastEl.classList.remove('show'); } }] }; };
+  /* ---------- a Spotlight result: open it, or find it where it lives ---------- */
+  CTX_MENUS.spot = function(tg){
+    var i = +tg.el.getAttribute('data-i'), it = spotHits[i]; if(!it) return null;
+    spotSel = i; $$('button', spotRes).forEach(function(b, j){ b.classList.toggle('sel', j === i); });
+    var ph = isPhone(), app = !ph && it.app && APPS[it.app] && !appGone(it.app) ? it.app : '', note = !ph && it.note && ditem(it.note) ? it.note : '';
+    var then = function(f){ return function(){ spotClose(); f(); }; };
+    return { keepSpot:true, items:[
+      { t:'Open', i:'open', fn:function(){ spotGo(i); } },
+      '-',
+      app && app !== 'den' && { t:'Show in Applications', i:'den', fn:then(function(){ denShowApp(app); }) },
+      note && { t:'Show in Den', i:'den', fn:then(function(){ var n = ditem(note); if(n) denOpen(dinside(n), note); }) },
+      app && !APPS[app].sys && app !== 'den' && (dockHas(app) ? { t:'Show in Dock', i:'dock', fn:then(function(){ dockBounce(app); }) } : { t:'Add to Dock', i:'dock', fn:function(){ dockPin(app); } }),
+      app && { t:dalias(app) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:then(function(){ daddApp(app); }) },
+      note && { t:'Download a Copy', i:'download', fn:function(){ jotDownload(note); } },
+      '-',
+      { t:'Copy Name', i:'copy', fn:function(){ clip(it.t); } }
+    ] };
+  };
+  /* ---------- Den: a place in its sidebar, and Applications between the apps ---------- */
+  function reinstallSub(){ var g = Object.keys(APPS).filter(appGone); return g.length ? g.map(function(k){ return { t:APPS[k].title, i:APPS[k].icon, fn:function(){ appInstall(k); } }; }) : [{ t:'Nothing to reinstall', dis:true }]; }
+  CTX_MENUS.denloc = function(tg){
+    if(isPhone()) return null;
+    var loc = tg.el.getAttribute('data-loc'), go = function(){ denGo(loc); }, f = loc && loc.charAt(0) !== '*' && loc !== 'trash' ? ditem(loc) : null;
+    var inDen = function(fn){ return function(){ denGo(''); var w = WM.wins.den, fw = w && $('.den-fw', w.body); if(fw) DFOCUS = fw; fn(); }; };
+    if(loc === 'trash') return { items:[{ t:'Open', i:'open', fn:go }, '-', { t:'Empty Trash\u2026', i:'trash', dis:!dtrashed().length, fn:demptyAsk }] };
+    if(f) return { items:[
+      { t:'Open', i:'folder', fn:go },
+      { t:'Open in New Window', i:'window', fn:function(){ dopen(f.id); } },
+      '-',
+      { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'item', id:f.id }); } },
+      { t:'Rename', i:'pencil', fn:inDen(function(){ drename(f.id); }) },
+      { tags:f.tag || '', fn:function(v){ dtag([f.id], v); } },
+      '-',
+      { t:'Show on Desktop', i:'wall', fn:function(){ dshow(); dflash(f.id); } },
+      { t:'Move to Trash', i:'trash', fn:function(){ dtrash([f.id]); } }
+    ] };
+    return { items:[
+      { t:'Open', i:'open', fn:go },
+      loc === '' && { t:'New Folder', i:'folder-plus', fn:inDen(function(){ dnewFolder(null); }) },
+      (loc === '' || loc === '*notes') && { t:'New Note', i:'jot', fn:function(){ jotNewIn(''); } },
+      loc === '*apps' && { t:'Reinstall', i:'download', sub:reinstallSub }
+    ] };
+  };
+  CTX_MENUS.denapps = function(){
+    if(isPhone()) return null;
+    $$('.den-app.sel').forEach(function(e){ e.classList.remove('sel'); });
+    return { items:[
+      { t:'Reinstall', i:'download', sub:reinstallSub },
+      '-',
+      { t:'Show in Terminal', i:'terminal', dis:appGone('terminal'), fn:function(){ termRun('ls /Applications'); } }
     ] };
   };
 /* tigOS core app.js, part 27b: fps counter and the debug overlay. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
@@ -4200,7 +4571,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     d.gone = d.gone.filter(function(x){ return x !== id; }); if(!d.gone.length) delete d.gone;
     Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(it.pkg && it.app === id) delete d.items[k]; });
     deskSave(); dockBuild(); dockPop(id); drender();
-    if(!quiet) toast(APPS[id].title+' is back', dockHas(id) ? 'In the Dock, where it was.' : 'Find it in Spotlight or Den.');
+    if(!quiet) toast(APPS[id].title+' is back');
     return true;
   }
   /* the file commands, installed over Terminal's own (13-pets.js) each time a Terminal opens. k: print, o, refresh (the prompt) */
@@ -4223,7 +4594,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     /* what a directory holds, as the shell names it: apps are id.app, folders and notes keep their names */
     var ent = function(it){ return { name:it.pkg ? it.app+'.app' : it.name, kind:it.pkg ? 'pkg' : it.kind === 'app' ? 'alias' : it.kind, it:it, app:it.app }; };
     var entries = function(l){
-      if(l === '*apps') return appsInstalled().map(function(a){ return { name:a+'.app', kind:'app', app:a }; });
+      if(l === '*apps') return denApps().map(function(a){ return { name:a+'.app', kind:'app', app:a }; });
       if(l === 'trash') return dtrashed().sort(function(a, b){ return (b.t2 || 0) - (a.t2 || 0); }).map(ent);
       if(l === '') return VIS().map(function(a){ return { name:a+'.app', kind:'app', app:a }; }).concat([{ name:'resume.pdf', kind:'pdf' }], ditems('').filter(function(x){ return x.kind !== 'app'; }).sort(dcmp('name')).map(ent));
       return dkids(l).sort(dcmp('name')).map(ent);
@@ -4258,7 +4629,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var go = function(l){ if(l !== S.cwd) S.prev = S.cwd; S.cwd = l; };
     var setBody = function(it, v){
       nbodySet(it.id, v); it.m = Date.now(); deskSave();
-      var w = WM.wins.jot; if(w && JOT.id === it.id){ var ta = $('.jot-text', w.body); if(ta) ta.value = v; jotFoot(); jotPrev(); }   /* the note open in Jot shows it at once */
+      var w = WM.wins.jot; if(w && JOT.id === it.id){ var ta = $('.jot-text', w.body); if(ta) ta.value = v; jotFoot(); }   /* the note open in Jot shows it at once */
       drender();
     };
     var notesIn = function(l, deep){ if(l === '*apps') return []; var own = (l === 'trash' ? dtrashed() : ditems(l)).filter(function(x){ return x.kind === 'note'; }); if(deep && l === '') ditems('').filter(function(x){ return x.kind === 'folder'; }).forEach(function(f){ own = own.concat(dkids(f.id).filter(function(x){ return x.kind === 'note'; })); }); return own; };
@@ -4425,7 +4796,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       });
       if(bin.length){ dtrash(bin.map(function(it){ return it.id; })); dim('moved '+bin.map(function(it){ return q(it.name); }).join(', ')+' to the Trash'); }
       if(erase.length){ derase(erase.map(function(it){ return it.id; })); dim('erased '+erase.map(function(it){ return q(it.pkg ? it.app+'.app' : it.name); }).join(', ')+' for good'); }
-      if(apps.length) print('moved '+apps.map(function(x){ return esc(x)+'.app'; }).join(', ')+' to the Trash. '+o('brew install '+esc(apps[0]))+' or Put Back brings '+(apps.length === 1 ? 'it' : 'them')+' back');
+      if(apps.length) print('moved '+apps.map(function(x){ return esc(x)+'.app'; }).join(', ')+' to the Trash');
     };
     C.rm = function(a){ rmAll(a, 'rm'); }; C.rmdir = function(a){ rmAll(a, 'rmdir'); };
     var cleanName = function(it, n){ return it.kind === 'note' ? nname(n) : String(n).replace(/[\/\\:]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 60); };
@@ -4500,7 +4871,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     };
     /* open: a folder or place in Den, a note in Jot, an app (or say how to get it back) */
     var open0 = CMD.open;
-    var opApp = function(a){ if(appGone(a)){ print('open: '+esc(APPS[a].title)+' isn\u2019t installed. '+o('brew install '+esc(a))+' brings it back', 'err'); return; } open(a); print('opening '+esc(a)); };
+    var opApp = function(a){ if(appGone(a)){ print('open: '+esc(APPS[a].title)+' isn\u2019t installed. '+o('brew install '+esc(a)), 'err'); return; } open(a); print('opening '+esc(a)); };
     C.open = function(arg){
       var P = parse(arg), t = P.a[0];
       if(t == null || t === '.'){ var l = here(); if(denOpen(l)){ print('opening Den'+(l ? ' at '+esc(dirName(l)) : '')); return; } open0(''); return; }
@@ -4516,13 +4887,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     /* the editors open the note in Jot, made first if it is new */
     var editor = function(name, old){ return function(arg){
       var P = parse(arg), t = P.a[0];
-      if(t == null){ if(old){ old(arg); return; } if(appGone('jot')){ print(name+': Jot isn\u2019t installed, and it does the editing here. '+o('brew install jot'), 'err'); return; } jotOpen(); print('opening Jot'); return; }
+      if(t == null){ if(old){ old(arg); return; } if(appGone('jot')){ print(name+': Jot isn\u2019t installed. '+o('brew install jot'), 'err'); return; } jotOpen(); print('opening Jot'); return; }
       var r = walk(t);
       if(r.err){ err(name+': '+t+': No such file or directory'); return; }
       if(r.dir != null){ err(name+': '+t+': Is a directory'); return; }
       if(r.e && r.e.kind !== 'note'){ err(name+': '+t+': not a text file'); return; }
       if(r.loc === 'trash'){ print(name+': '+esc(t)+' is in the Trash. '+o('restore')+' it first', 'err'); return; }
-      if(appGone('jot')){ print(name+': Jot isn\u2019t installed, and it does the editing here. '+o('brew install jot'), 'err'); return; }
+      if(appGone('jot')){ print(name+': Jot isn\u2019t installed. '+o('brew install jot'), 'err'); return; }
       if(!r.e && !writable(r.loc, name, t)) return;
       var it = r.e ? r.e.it : jotCreate(r.loc, null, '', r.name);
       jotOpen(it.id); jotFocus(true);
@@ -4543,7 +4914,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     };
     C.empty = function(arg){
       var n = dtrashed().length; if(!n){ dim('the Trash is already empty.'); return; }
-      if(/(^|\s)(-f|-y|--force|--yes)\b/.test(arg || '')){ dempty(); print('erased '+plural(n, 'item')+' for good.'); toast('Trash emptied', n === 1 ? '1 item erased.' : n+' items erased.'); return; }
+      if(/(^|\s)(-f|-y|--force|--yes)\b/.test(arg || '')){ dempty(); print('erased '+plural(n, 'item')+' for good.'); toast('Trash emptied', n === 1 ? '1 item erased' : n+' items erased'); return; }
       demptyAsk(); dim('confirm in the dialog to erase '+plural(n, 'item')+' for good (empty -f skips it)');
     };
     /* apps: brew, apt, and the plain words */
@@ -4552,14 +4923,14 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       var a = appOf(t); if(!a){ err(apt ? 'E: Unable to locate package '+t : 'Error: No available formula with the name "'+t+'".'); return; }
       if(!appGone(a)){ print((apt ? esc(a)+' is already the newest version.' : 'Warning: '+esc(a)+' is already installed and up-to-date.'), 'dim'); return; }
       appInstall(a);
-      print((apt ? 'Reading package lists... Done\nUnpacking '+esc(a)+'.app ...\nSetting up '+esc(a)+' ...\n' : '==&gt; Downloading '+esc(a)+'.app\n==&gt; Installing '+esc(a)+'\n\u{1F37A}  ')+esc(APPS[a].title)+' is installed'+(dockHas(a) ? ', back in the Dock' : ''), 'ok');
+      print((apt ? 'Reading package lists... Done\nUnpacking '+esc(a)+'.app ...\nSetting up '+esc(a)+' ...\n' : '==&gt; Downloading '+esc(a)+'.app\n==&gt; Installing '+esc(a)+'\n\u{1F37A}  ')+esc(APPS[a].title)+' is installed', 'ok');
     };
     var uninstall = function(t, apt){
       var a = appOf(t); if(!a){ err(apt ? 'E: Unable to locate package '+t : 'Error: No such keg: '+t); return; }
       if(appGone(a)){ err((apt ? 'Package \''+a+'\' is not installed, so not removed' : 'Error: '+a+' is not installed.')); return; }
       if(!appRemovable(a)){ err(whyNot(a)); return; }
       appRemove(a);
-      print((apt ? 'Removing '+esc(a)+' ...' : 'Uninstalling '+esc(a)+'.app...')+' moved to the Trash. '+o('brew install '+esc(a))+' or Put Back brings it back');
+      print((apt ? 'Removing '+esc(a)+' ...' : 'Uninstalling '+esc(a)+'.app...')+' moved to the Trash');
     };
     var pkgs = function(sub, rest, apt){
       if(/^(install|reinstall)$/.test(sub)){ if(!rest.length) print('usage: '+(apt ? 'apt' : 'brew')+' install &lt;app&gt;'); rest.forEach(function(t){ install(t, apt); }); return true; }

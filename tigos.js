@@ -331,6 +331,12 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var $ = function(s, c){ return (c||root).querySelector(s); };
   var $$ = function(s, c){ return Array.prototype.slice.call((c||root).querySelectorAll(s)); };
   var isMobile = function(){ return window.matchMedia('(max-width:760px)').matches; };
+  /* isMobile is the layout (full-screen windows, the bottom dock). isPhone is the device: a phone held either way, or a window as narrow as one.
+     A phone keeps tigOS simple: no Terminal or Trash in the dock, no desktop icons or folders, short menus. A tablet in the same
+     layout (an iPad mini upright is 744 px) keeps all of it */
+  var PHONE_MQ = '(max-width:540px), (pointer:coarse) and (max-height:540px)';
+  var isPhone = function(){ return window.matchMedia(PHONE_MQ).matches; };
+  root.classList.toggle('phone', isPhone());
   var esc = function(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
   var A = window.TIG_ASSETS || {};
   var img = function(key, alt, cls){ return A[key] ? '<img src="'+A[key]+'" alt="'+esc(alt||'')+'" loading="lazy" decoding="async"'+(cls?' class="'+cls+'"':'')+'>' : ''; };
@@ -545,13 +551,14 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var dock = $('#dock'); if(!dock) return;
     var pins = DESKS ? dockList() : DOCK_ORDER, anchor = $('.sep.main', dock) || $('a.dk', dock);
     var want = open.filter(function(k){ return APPS[k] && APPS[k].sys !== 'trash' && pins.indexOf(k) < 0; }), have = $$('.dk.tmp', dock);
-    have.forEach(function(d){ if(want.indexOf(d.getAttribute('data-dock')) < 0 && !d.classList.contains('gone')){ d.classList.add('gone'); setTimeout(function(){ d.remove(); var s2 = $('.sep.tmpsep', dock); if(s2 && !$('.dk.tmp:not(.gone)', dock)) s2.remove(); }, 260); } });
+    have.forEach(function(d){ if(want.indexOf(d.getAttribute('data-dock')) < 0 && !d.classList.contains('gone')){ d.classList.add('gone'); setTimeout(function(){ d.remove(); var s2 = $('.sep.tmpsep', dock); if(s2 && !$('.dk.tmp:not(.gone)', dock)) s2.remove(); dockFitSoon(); }, 260); } });
     want.forEach(function(id){ var ex = $('.dk.tmp[data-dock="'+id+'"]', dock); if(ex && !ex.classList.contains('gone')){ var tp = $('.tip', ex); if(tp && tp.textContent !== APPS[id].title) tp.textContent = APPS[id].title; return; } if(ex) ex.remove();
       if(!$('.sep.tmpsep', dock)){ var sep = document.createElement('span'); sep.className = 'sep tmpsep'; dock.insertBefore(sep, anchor); }
       var b = document.createElement('button'); b.className = 'dk tmp'; b.type = 'button'; b.setAttribute('data-open', id); b.setAttribute('data-dock', id); b.setAttribute('aria-label', APPS[id].title);
       b.innerHTML = tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span>'; dock.insertBefore(b, anchor);
       if(USER.name === 'ariel') heartsOn(); });
     var s3 = $('.sep.tmpsep', dock); if(s3 && !$('.dk.tmp', dock)) s3.remove();
+    dockFitSoon();   /* a running app's icon came or went: the Dock may need to shrink or may grow back (27-dock-edit.js) */
   }
   function dockTop(){ var d = $('#dock'); if(!d) return desk.clientHeight - 84; return Math.round(d.getBoundingClientRect().top - desk.getBoundingClientRect().top); }
   /* the area windows may occupy. A bottom dock reserves its strip; a side dock reserves its column instead; an auto-hidden dock reserves nothing (it slides over the windows, like macOS) */
@@ -567,6 +574,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function open(id, opts){
     opts = opts || {};
     var a = APPS[id]; if(!a) return;
+    if(a.sys && isPhone()) return;   /* the Trash, folders and Get Info are desktop features; a phone has none of them */
     if(WM.wins[id]){ var ex = WM.wins[id]; if(ex.min){ restore(ex); } focus(ex); if(opts.route && ex.route) ex.route(opts.route); return ex; }
     if(isMobile()){ Object.keys(WM.wins).forEach(function(k){ var o = WM.wins[k]; o.el.remove(); delete WM.wins[k]; }); }   // phones: one app at a time
     var el = document.createElement('section'); el.className = 'win'; el.setAttribute('role','dialog'); el.setAttribute('aria-label', a.title); el.dataset.app = id;
@@ -1820,6 +1828,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     root.classList.remove('pet-sm', 'pet-lg'); if(PREF.petsize && PREF.petsize !== 'md') root.classList.add('pet-'+PREF.petsize);
     if(typeof petApply === 'function') petApply();
     if(PREF.dockhide !== 'on') root.classList.remove('dock-peek');
+    dockFit();   /* a new size or side may not fit the screen (27-dock-edit.js) */
     if(WM && WM.wins) reclamp();   /* moving or hiding the dock changes the work area, so zoomed and tall windows follow it */
     STORE.set(JSON.stringify(PREF));
     if(typeof reclamp === 'function'){ reclamp(); setTimeout(reclamp, 350); }   // dock size / position / hide all move the dock edge
@@ -1840,6 +1849,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var seg = function(key, opts){ return '<div class="seg" data-pref="'+key+'">'+opts.map(function(o){ return '<button type="button" data-v="'+o[0]+'" class="'+(PREF[key] === o[0] ? 'on' : '')+'">'+o[1]+'</button>'; }).join('')+'</div>'; };
     var sw = '<div class="seg" data-pref="accent">'+Object.keys(ACCENTS).map(function(k){ return '<button type="button" class="sw '+(PREF.accent === k ? 'on' : '')+'" data-v="'+k+'" style="background:'+ACCENTS[k]+'" aria-label="'+k+'"></button>'; }).join('')+'</div>';
     var dseg = function(key, opts){ return '<div class="seg" data-dview="'+key+'">'+opts.map(function(o){ return '<button type="button" data-v="'+o[0]+'" class="'+(String(dview(key)) === o[0] ? 'on' : '')+'">'+o[1]+'</button>'; }).join('')+'</div>'; };   /* desktop view, saved per user (27-desktop.js) */
+    var phone = isPhone(), touchy = isMobile() || (window.matchMedia && matchMedia('(pointer:coarse)').matches);
     var row = function(t, sub, ctl){ return '<div class="set-row"><div class="lbl"><b>'+t+'</b><span>'+sub+'</span></div><div>'+ctl+'</div></div>'; };
     /* the pet picker: one chip per pet with a live mini of the pet inside, plus None. Chips are .pet elements so the same rig draws them */
     var cur = PREF.pet && PETS[PREF.pet] ? PREF.pet : '';
@@ -1854,11 +1864,12 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       row('Dock position', 'Bottom, left or right.', seg('dockpos', [['bottom','Bottom'],['left','Left'],['right','Right']]))+
       row('Auto-hide dock', 'Slides away until you reach for it.', seg('dockhide', [['off','Off'],['on','On']]))+
       row('Magnification', 'Icons grow as the pointer passes.', seg('dockmag', [['on','On'],['off','Off']])))+
-      (isMobile() ? '' : row('Dock apps', 'Drag icons to rearrange them, or off the Dock to remove them.', '<button type="button" class="set-btn" data-dock-reset>Reset Dock\u2026</button>'))+   /* a phone resets its dock from the dock itself: hold the space beside the icons */
+      (phone ? '' : row('Dock apps', touchy ? 'Hold an icon for its options, or the space beside the icons for the Dock\u2019s own menu.' : 'Drag icons to rearrange them, or off the Dock to remove them.', '<button type="button" class="set-btn" data-dock-reset>Reset Dock\u2026</button>'))+   /* a phone keeps its Dock as it is */
+      (phone ? '' :   /* nor has it desktop icons */
       '<div class="set-group"><div class="eyebrow">Desktop</div></div>'+
       row('Desktop icons', 'Hiding them hides the welcome text too.', dseg('icons', [['true','Show'],['false','Hide']]))+
       row('Welcome text', 'The hello on an empty desktop.', dseg('hero', [['true','Show'],['false','Hide']]))+
-      row('Icon size', '', dseg('size', [['sm','S'],['md','M'],['lg','L']]))+
+      row('Icon size', '', dseg('size', [['sm','S'],['md','M'],['lg','L']])))+
       (isMobile() ? '' : row('Terminal cursor', 'Block is the default.', seg('cursor', [['block','Block'],['line','Line'],['underline','Underline']])))+
       row('Wallpaper', 'Live adds depth that follows the mouse.', seg('wall', [['live','Live'],['still','Still']]))+
       row('Screensaver', esc(PREF.saver === 'random' ? 'A different one each time.' : (SAVERS[PREF.saver] || SAVERS.drift).sub+'.'), seg('saver', Object.keys(SAVERS).map(function(k){ return [k, SAVERS[k].name]; }).concat([['random','Random']])))+
@@ -2461,7 +2472,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(t.closest('.win')) return null;
     var dk = t.closest('#dock .dk');
     if(dk) return { kind:dk.classList.contains('trash') ? 'trash' : dk.tagName === 'A' ? 'link' : 'dock', el:dk };
-    if(t.closest('#dock')) return { kind:'dockbg', el:$('#dock') };
+    if(t.closest('#dock')) return isPhone() ? { kind:'none' } : { kind:'dockbg', el:$('#dock') };   /* a phone's dock is not edited, so the space beside its icons has no menu */
     var pet = t.closest('#pets .pet');
     if(pet) return touch ? null : { kind:'pet', el:pet };
     var di = t.closest('.dicon');
@@ -2628,7 +2639,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var DLAYER = document.createElement('div'); DLAYER.className = 'dicons'; DLAYER.id = 'dicons'; DLAYER.setAttribute('aria-label', 'Desktop'); desk.insertBefore(DLAYER, winsEl);
   function drender(){
     if(!DLAYER) return;
-    var g = dgrid(), pos = dlayout(g), its = ditems(''), have = {};
+    var phone = isPhone(), g = dgrid(), pos = phone ? {} : dlayout(g), its = phone ? [] : ditems(''), have = {};   /* a phone has no desktop icons: what was saved stays saved, it is just not drawn */
     DPOS = pos; if(DLAYOUT_NEW){ DLAYOUT_NEW = false; deskSave(); }   /* a new item keeps the cell it was first given */
     root.style.setProperty('--di', g.s+'px'); root.style.setProperty('--dcw', g.cw+'px');
     $$('.dicon', DLAYER).forEach(function(el){ have[el.getAttribute('data-id')] = el; });
@@ -2639,7 +2650,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     });
     Object.keys(have).forEach(function(k){ have[k].remove(); });
     var icons = dview('icons'), hero = dview('hero');
-    root.classList.toggle('desk-noicons', !icons); root.classList.toggle('desk-nohero', !icons || !hero);
+    root.classList.toggle('desk-noicons', !phone && !icons); root.classList.toggle('desk-nohero', !phone && (!icons || !hero));   /* and its welcome text always shows */
     fsyncAll(); trashLook();
     if(USER.name === 'ariel') heartsOn();
     var sw = WM.wins.settings; if(sw) $$('[data-dview]', sw.body).forEach(function(g){ var k = g.getAttribute('data-dview'); $$('button', g).forEach(function(b){ b.classList.toggle('on', String(dview(k)) === b.getAttribute('data-v')); }); });
@@ -2934,7 +2945,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   });
   /* keys for a selection on the desktop or in a folder: Return renames, Cmd+Down opens, Cmd+Delete moves to the Trash, Cmd+A selects all */
   document.addEventListener('keydown', function(e){
-    if(!DFOCUS || CTX.stack.length || DREN || $('.dlg-bg') || (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]'))) return;
+    if(!DFOCUS || isPhone() || CTX.stack.length || DREN || $('.dlg-bg') || (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]'))) return;
     if(!root.contains(DFOCUS) || (DFOCUS !== DLAYER && !DFOCUS.isConnected)){ DFOCUS = null; return; }
     var ids = dselIds(DFOCUS), meta = e.metaKey || e.ctrlKey, inTrash = DFOCUS.classList && DFOCUS.classList.contains('trashw');
     if(meta && (e.key === 'a' || e.key === 'A') && (DFOCUS === DLAYER ? dview('icons') : true)){ e.preventDefault(); $$('.dicon', DFOCUS).forEach(function(el){ el.classList.add('sel'); }); return; }
@@ -2977,7 +2988,54 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     updateChrome();
     trashLook();
     if(USER.name === 'ariel') heartsOn();
+    dockFit();
   }
+  /* ---------- fitting the Dock to the screen ----------
+     Icons keep the size Settings gives them until the Dock would run off the screen (a large Dock on an upright tablet, GreggyD's launcher
+     on a short screen, a long row of running apps); then they all shrink together (--fit, never under 30 px). A short screen (a phone held
+     sideways) also caps them at 13% of its height, so the Dock never eats the windows. A phone upright shows as many apps as fit at a size a
+     thumb can hit (38 px), LinkedIn stepping out first, then the last app; framed in Google Sites the CSS sizes the icons and is only told
+     how many there are (--n), at 32 px or more */
+  function dockFit(){
+    var dock = $('#dock'); if(!dock || root.classList.contains('dk-dragging') || (DGAP && DGAP.isConnected)) return;
+    var mob = isMobile(), phone = isPhone(), framed = mob && root.classList.contains('framed'), gd = !mob && root.classList.contains('u-greggyd');
+    $$('.dk.ovf', dock).forEach(function(k){ k.classList.remove('ovf'); });
+    var kids = $$('#dock > .dk, #dock > .sep').filter(function(k){ return getComputedStyle(k).display !== 'none'; }), icons = kids.filter(function(k){ return k.classList.contains('dk'); });
+    if(!icons.length || !dock.offsetWidth) return;
+    var px = function(v){ return parseFloat(v) || 0; }, x = dockAxis() === 'x', cs = getComputedStyle(dock), nsep = kids.length - icons.length;
+    var gap = px(x ? cs.columnGap : cs.rowGap), pad = x ? px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.borderLeftWidth) + px(cs.borderRightWidth) : px(cs.paddingTop) + px(cs.paddingBottom) + px(cs.borderTopWidth) + px(cs.borderBottomWidth), seps = 0;
+    kids.forEach(function(k){ if(k.classList.contains('dk')) return; var ks = getComputedStyle(k); seps += x ? k.offsetWidth + px(ks.marginLeft) + px(ks.marginRight) : k.offsetHeight + px(ks.marginTop) + px(ks.marginBottom); });
+    var fixed = function(n){ return pad + seps + gap * Math.max(0, n + nsep - 1); };   /* everything but the icons: padding, dividers, the gaps between */
+    var cur = px(dock.style.getPropertyValue('--fit')) || 1, nat = px(getComputedStyle(icons[0]).height) / cur;   /* the used height: square, untouched by hover or a slide in, and not rounded */
+    var W = root.clientWidth, H = root.clientHeight;
+    var was = dock.style.getPropertyValue('--fit') + '/' + dock.style.getPropertyValue('--n'), now = function(){ return dock.style.getPropertyValue('--fit') + '/' + dock.style.getPropertyValue('--n') !== was; };
+    if(mob && (phone || framed)){
+      var drops = icons.filter(function(k){ return k.tagName === 'A'; }).concat(icons.filter(function(k){ return k.tagName !== 'A'; }).reverse()), n = icons.length, k = 0;
+      var room = root.classList.contains('u-greggyd') ? W : W - 20;   /* the Ubuntu bar spans the screen; the plain dock keeps 10 px each side */
+      var size = function(n){ return framed ? Math.min(40, (W - 88 - (n - 1) * 3) / n) : Math.min(nat, (room - fixed(n)) / n); };   /* the framed sum is the one in 31-mobile.css */
+      while(n > 1 && size(n) < (framed ? 32 : 38)){ drops[k++].classList.add('ovf'); n--; }
+      if(framed){ dock.style.setProperty('--n', n); dock.style.removeProperty('--fit'); }
+      else { dock.style.setProperty('--fit', Math.min(1, size(n) / nat).toFixed(4)); dock.style.removeProperty('--n'); }
+      return now();
+    }
+    var mb = $('.menubar'), avail = x ? W - (mob ? 20 : 24) : gd ? H - 28 : H - 2 * ((mb ? mb.offsetHeight : 30) + 8);
+    var f = Math.min(1, (avail - fixed(icons.length)) / (icons.length * nat), (x ? H : W) * .13 / nat);
+    dock.style.setProperty('--fit', Math.max(f, Math.min(1, 30 / nat)).toFixed(4)); dock.style.removeProperty('--n');
+    return now();   /* true when the icons changed size, so windows can follow the dock's new edge */
+  }
+  var FIT_T = 0;
+  function dockFitSoon(){ cancelAnimationFrame(FIT_T); FIT_T = requestAnimationFrame(function(){ if(dockFit()) reclamp(); }); }
+  window.addEventListener('resize', dockFitSoon);
+  /* a window narrowed past a phone's width, or a phone turned: the dock, the desktop and the menus follow, and windows a phone has no
+     place for (the Trash, a folder, Get Info) close */
+  var phoneMQ = window.matchMedia(PHONE_MQ), phoneSync = function(){
+    var on = isPhone(); if(root.classList.contains('phone') === on) return;
+    root.classList.toggle('phone', on); ctxClose(true);
+    if(on) Object.keys(WM.wins).forEach(function(k){ if(APPS[k] && APPS[k].sys && WM.wins[k]) close(WM.wins[k]); });
+    drender(); updateChrome(); dockFit();
+  };
+  if(phoneMQ.addEventListener) phoneMQ.addEventListener('change', phoneSync); else if(phoneMQ.addListener) phoneMQ.addListener(phoneSync);
+  window.addEventListener('resize', phoneSync);
   function dockBounce(app){ var b = $('#dock .dk[data-dock="'+app+'"]'); if(!b) return; b.classList.remove('bounce'); void b.offsetWidth; b.classList.add('bounce'); }
   function dockPop(app){ var b = $('#dock .dk.pin[data-dock="'+app+'"]'); if(!b) return; b.classList.remove('dk-in'); void b.offsetWidth; b.classList.add('dk-in'); setTimeout(function(){ b.classList.remove('dk-in'); }, 520); }
   /* Keep in Dock: at the end of the kept apps, or at a slot (a drop) */
@@ -3302,13 +3360,17 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var mob = isMobile(), icons = dview('icons'), hero = dview('hero'), sort = dview('sort'), size = dsize(), n = ditems('').length, at = deskXY(x, y);
     dselClear(); DFOCUS = DLAYER;
     var sortBy = function(v){ dviewSet('sort', v); }, hideTip = mob ? 'Hold the desktop to show them again.' : 'Right-click the desktop to show them again.';
+    var wall = { t:'Change Wallpaper', i:'wall', sub:wallSub }, pet = Object.keys(PETS).length && { t:'Desktop Pet', i:'paw', sub:petSub },
+        saver = { t:'Start Screen Saver', i:'moon', sub:function(){ return Object.keys(SAVERS).map(function(k){ return { t:SAVERS[k].name, note:k === PREF.saver ? 'Default' : '', fn:function(){ saverGo(k); } }; }).concat(['-', { t:'Random', fn:function(){ saverGo('random'); } }]); } },
+        sets = { t:'Settings\u2026', i:'gear', fn:function(){ open('settings'); } };
+    if(isPhone()) return { items:[wall, pet, '-', saver, sets] };   /* a phone's home screen: the look of it, and nothing that needs files or a Trash */
     return { items:[
       { t:'New Folder', i:'folder-plus', fn:function(){ dnewFolder(mob ? null : at); } },
       '-',
       { t:'Get Info', i:'info', k:mob ? '' : '\u2318I', fn:function(){ infoShow({ type:'desk' }); } },
       '-',
-      { t:'Change Wallpaper', i:'wall', sub:wallSub },
-      Object.keys(PETS).length && { t:'Desktop Pet', i:'paw', sub:petSub },
+      wall,
+      pet,
       '-',
       { t:'Sort By', i:'sort', sub:function(){ return [{ t:'None', on:sort === 'grid', fn:function(){ sortBy('grid'); } }, '-'].concat(seg3(sort, sortBy, [['name', 'Name'], ['kind', 'Kind'], ['date', 'Date Added']])); } },
       { t:'Clean Up', i:'grid', dis:sort !== 'grid' || !n || !icons, fn:function(){ dcleanUp(); } },
@@ -3321,15 +3383,14 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
                      : { t:'Show Welcome Text', i:'eye', fn:function(){ dviewSet('hero', true); } }),
       '-',
       { t:'Add to Desktop', i:'plus', sub:function(){ return VIS().map(function(app){ return { t:APPS[app].title, i:APPS[app].icon, on:!!dalias(app), fn:function(){ daddApp(app); } }; }); } },
-      mob && dtrashed().length && { t:'Open Trash', i:'trash', fn:function(){ open('trash'); } },
       '-',
-      { t:'Start Screen Saver', i:'moon', sub:function(){ return Object.keys(SAVERS).map(function(k){ return { t:SAVERS[k].name, note:k === PREF.saver ? 'Default' : '', fn:function(){ saverGo(k); } }; }).concat(['-', { t:'Random', fn:function(){ saverGo('random'); } }]); } },
-      { t:'Settings\u2026', i:'gear', fn:function(){ open('settings'); } }
+      saver,
+      sets
     ] };
   };
   /* ---------- an icon on the desktop or in a folder or the Trash ---------- */
   CTX_MENUS.icon = function(tg){
-    var el = tg.el, id = el.getAttribute('data-id'), it = ditem(id); if(!it) return null;
+    var el = tg.el, id = el.getAttribute('data-id'), it = ditem(id); if(!it || isPhone()) return null;
     var host = dhost(el), mob = isMobile(), here = host === DLAYER ? '' : host.getAttribute('data-folder');
     if(!el.classList.contains('sel')) dselOnly(el); else DFOCUS = host;   /* macOS: right-clicking an unselected icon selects it alone; a selected one keeps the selection */
     var ids = dselIds(host); if(ids.indexOf(id) < 0) ids = [id];
@@ -3363,6 +3424,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   };
   /* ---------- an open folder or Trash window, between its icons ---------- */
   CTX_MENUS.fbg = function(tg){
+    if(isPhone()) return null;
     var fw = tg.el, fid = fw.getAttribute('data-folder'), sel = function(){ $$('.dicon', fw).forEach(function(e){ e.classList.add('sel'); }); };
     dselClear(); DFOCUS = fw;
     if(fid === 'trash') return { items:[
@@ -3385,13 +3447,20 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   CTX_MENUS.dock = function(tg){
     var b = tg.el, app = b.getAttribute('data-dock'), a = APPS[app]; if(!a) return null;
     var w = WM.wins[app], pinned = b.classList.contains('pin'), top = topWin(true), sys = !!a.sys, items = [];
+    var bare = function(l){ return l.map(function(x){ var y = {}; Object.keys(x).forEach(function(k){ if(k !== 'i') y[k] = x[k]; }); return y; }); };   /* dock menus carry no icons, as on a Mac */
+    if(isPhone()){   /* a phone keeps the Dock as it is: an app's quick actions (the resume, a case study), then open or close it, like iOS */
+      if(sys) return null;
+      items = bare(appActions(app)); if(items.length) items.push('-');
+      items.push(w ? { t:'Close', fn:function(){ close(w); } } : { t:'Open', fn:function(){ open(app, { from:b }); } });
+      return { items:items, anchor:b, src:b };
+    }
     if(w){ items.push({ t:a.title, on:!w.min && top === w, note:w.min ? 'Minimized' : '', fn:function(){ if(w.min) restore(w); focus(w); } }, '-'); }
     if(sys){
       if(a.sys === 'folder') items.push({ t:'Show on Desktop', fn:function(){ dshow(); dflash(a.folder); } }, { t:'Get Info', fn:function(){ infoShow({ type:'item', id:a.folder }); } }, '-');
       if(w) items.push(w.min ? { t:'Show', fn:function(){ restore(w); focus(w); } } : { t:'Hide', fn:function(){ minimize(w); } }, { t:'Close', fn:function(){ close(w); } });
       return { items:items, anchor:b, src:b };
     }
-    var acts = appActions(app); if(acts.length) items = items.concat(acts.map(function(x){ var y = {}; Object.keys(x).forEach(function(k){ if(k !== 'i') y[k] = x[k]; }); return y; }), '-');   /* dock menus carry no icons, as on a Mac */
+    var acts = appActions(app); if(acts.length) items = items.concat(bare(acts), '-');
     items.push({ t:'Options', sub:function(){ return [
       w ? { t:'Keep in Dock', on:pinned, fn:function(){ if(pinned) dockUnpin(app); else dockPin(app); } } : null,
       { t:'Open at Login', on:loginHas(app), fn:function(){ var on = loginToggle(app); toast(on ? a.title+' will open at login' : a.title+' won\u2019t open at login', on ? 'Every time tigOS starts up on this device.' : ''); } },
@@ -3404,6 +3473,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     return { items:items, anchor:b, src:b };
   };
   CTX_MENUS.trash = function(tg){
+    if(isPhone()) return null;
     var n = dtrashed().length;
     return { items:[{ t:'Open', fn:function(){ open('trash', { from:tg.el }); } }, '-', { t:'Empty Trash', dis:!n, fn:demptyAsk }], anchor:tg.el, src:tg.el };
   };
@@ -3413,6 +3483,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   };
   /* the divider and the space between icons: the Dock's own settings */
   CTX_MENUS.dockbg = function(){
+    if(isPhone()) return null;
     var mob = isMobile(), gd = root.classList.contains('u-greggyd'), hide = PREF.dockhide === 'on', mag = PREF.dockmag !== 'off';
     return { atDock:true, items:[
       !mob && !gd && { t:hide ? 'Turn Hiding Off' : 'Turn Hiding On', fn:function(){ setPref('dockhide', hide ? 'off' : 'on'); } },
@@ -3422,7 +3493,6 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       !mob && { t:'Size', sub:function(){ return seg3(PREF.dock, function(v){ setPref('dock', v); }, [['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large']]); } },
       '-',
       { t:'Reset Dock\u2026', fn:dockResetAsk },
-      mob && dtrashed().length && { t:'Open Trash', fn:function(){ open('trash'); } },   /* a phone's dock has no Trash icon */
       !mob && { t:'Dock Settings\u2026', fn:function(){ open('settings'); } }
     ] };
   };
@@ -3431,7 +3501,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var el = tg.el, id = el && el.dataset.app, w = id && WM.wins[id], a = APPS[id]; if(!w || !a) return null;
     focus(w);
     var others = Object.keys(WM.wins).filter(function(k){ return k !== id; }), game = id === 'games', fs = el.classList.contains('fs');
-    var info = a.sys === 'folder' ? { type:'item', id:a.folder } : a.sys === 'trash' ? { type:'trash' } : a.sys ? null : { type:'app', app:id };
+    var phone = isPhone(), info = phone ? null : a.sys === 'folder' ? { type:'item', id:a.folder } : a.sys === 'trash' ? { type:'trash' } : a.sys ? null : { type:'app', app:id };
     var acts = a.sys ? [] : appActions(id);
     return { items:[
       { t:'Minimize', i:'minus', fn:function(){ minimize(w); } },
@@ -3445,8 +3515,8 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       '-',
       acts.length && { t:'Quick Actions', i:'skills', sub:acts },
       info && { t:'Get Info', i:'info', fn:function(){ infoShow(info); } },
-      !a.sys && { t:'Keep in Dock', i:'dock', on:dockHas(id), fn:function(){ if(dockHas(id)) dockUnpin(id); else dockPin(id); } },
-      !a.sys && { t:dalias(id) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:function(){ daddApp(id); } },
+      !a.sys && !phone && { t:'Keep in Dock', i:'dock', on:dockHas(id), fn:function(){ if(dockHas(id)) dockUnpin(id); else dockPin(id); } },
+      !a.sys && !phone && { t:dalias(id) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:function(){ daddApp(id); } },
       '-',
       others.length && { t:'Close Other Windows', fn:function(){ others.forEach(function(k){ if(WM.wins[k]) close(WM.wins[k]); }); } },
       { t:'Close Window', i:'close', k:'\u2318W', fn:function(){ close(w); } }

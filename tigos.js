@@ -475,6 +475,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(keep !== 'wx' && !wxPop.hidden){ wxPop.hidden = true; wxEl.classList.remove('on'); }
     var pwm = $('#pwMenu'); if(keep !== 'pw' && pwm && !pwm.hidden){ pwm.hidden = true; }
     var tgm = $('#tgMenu'); if(keep !== 'menu' && tgm && !tgm.hidden){ tgm.hidden = true; $('#mbLogo').classList.remove('on'); }
+    if(keep !== 'ctx' && typeof ctxClose === 'function' && typeof CTX !== 'undefined' && CTX) ctxClose(true);   /* a right-click menu (27-ctx-menu.js) */
   }
   function calParts(){
     try {
@@ -519,10 +520,12 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
 /* tigOS core app.js, part 06: desktop icons dock. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- desktop icons + dock ---------------- */
   function tileHTML(id){ var a = APPS[id]; return '<span class="tile '+a.tile+'">'+ic(a.icon)+'</span>'; }
-  $('#dock').innerHTML = DOCK_ORDER.map(function(id, i){
-    return (i === DOCK_ORDER.length-1 ? '<span class="sep"></span>' : '') +
-      '<button class="dk" type="button" data-open="'+id+'" data-dock="'+id+'" aria-label="'+esc(APPS[id].title)+'">'+tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span></button>';
-  }).join('') + '<a class="dk" href="'+TIG.contact.linkedin+'" target="_blank" rel="noopener" aria-label="LinkedIn"><span class="tile linkedin">'+ic('linkedin')+'</span><span class="tip">LinkedIn \u2197</span></a>';
+  /* the macOS layout: kept apps, a separator, then the LinkedIn link and the Trash. 27-dock-edit.js swaps in each user's own kept apps
+     and slots running apps that are not kept in before the separator */
+  $('#dock').innerHTML = DOCK_ORDER.map(function(id){
+    return '<button class="dk pin" type="button" data-open="'+id+'" data-dock="'+id+'" aria-label="'+esc(APPS[id].title)+'">'+tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span></button>';
+  }).join('') + '<span class="sep main"></span><a class="dk" href="'+TIG.contact.linkedin+'" target="_blank" rel="noopener" aria-label="LinkedIn"><span class="tile linkedin">'+ic('linkedin')+'</span><span class="tip">LinkedIn \u2197</span></a>'+
+    '<button class="dk trash" type="button" data-open="trash" data-dock="trash" aria-label="Trash"><span class="tile trash">'+ic('trash')+'</span><span class="tip">Trash</span></button>';
 
 /* tigOS core app.js, part 07: window manager. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- window manager ---------------- */
@@ -536,15 +539,19 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var top = topWin(true);
     $('#mbApp').textContent = top ? APPS[top.id].title : P.name;
   }
-  /* hidden apps (Arcade, Pets) get a dock icon only while they are open, like a running app that is not pinned */
+  /* an app that is open but not kept in the Dock (the Arcade, Settings, a folder, one taken out of the Dock) gets an icon only while it
+     runs, behind its own separator, like a recent app on a Mac. The Trash has its own fixed icon */
   function dockTemp(open){
     var dock = $('#dock'); if(!dock) return;
-    var want = open.filter(function(k){ return APPS[k] && APPS[k].hidden && !$('.dk.xtra[data-dock="'+k+'"]', dock); }), have = $$('.dk.tmp', dock), sep = $('.sep.tmpsep', dock), anchor = $('a.dk', dock);
-    have.forEach(function(d){ if(want.indexOf(d.getAttribute('data-dock')) < 0){ d.classList.add('gone'); setTimeout(function(){ d.remove(); var s2 = $('.sep.tmpsep', dock); if(s2 && !$('.dk.tmp:not(.gone)', dock)) s2.remove(); }, 260); } });
-    want.forEach(function(id){ if($('.dk.tmp[data-dock="'+id+'"]', dock)) return;
-      if(!$('.sep.tmpsep', dock)){ sep = document.createElement('span'); sep.className = 'sep tmpsep'; dock.insertBefore(sep, anchor); }
+    var pins = DESKS ? dockList() : DOCK_ORDER, anchor = $('.sep.main', dock) || $('a.dk', dock);
+    var want = open.filter(function(k){ return APPS[k] && APPS[k].sys !== 'trash' && pins.indexOf(k) < 0; }), have = $$('.dk.tmp', dock);
+    have.forEach(function(d){ if(want.indexOf(d.getAttribute('data-dock')) < 0 && !d.classList.contains('gone')){ d.classList.add('gone'); setTimeout(function(){ d.remove(); var s2 = $('.sep.tmpsep', dock); if(s2 && !$('.dk.tmp:not(.gone)', dock)) s2.remove(); }, 260); } });
+    want.forEach(function(id){ var ex = $('.dk.tmp[data-dock="'+id+'"]', dock); if(ex && !ex.classList.contains('gone')){ var tp = $('.tip', ex); if(tp && tp.textContent !== APPS[id].title) tp.textContent = APPS[id].title; return; } if(ex) ex.remove();
+      if(!$('.sep.tmpsep', dock)){ var sep = document.createElement('span'); sep.className = 'sep tmpsep'; dock.insertBefore(sep, anchor); }
       var b = document.createElement('button'); b.className = 'dk tmp'; b.type = 'button'; b.setAttribute('data-open', id); b.setAttribute('data-dock', id); b.setAttribute('aria-label', APPS[id].title);
-      b.innerHTML = tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span>'; dock.insertBefore(b, anchor); });
+      b.innerHTML = tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span>'; dock.insertBefore(b, anchor);
+      if(USER.name === 'ariel') heartsOn(); });
+    var s3 = $('.sep.tmpsep', dock); if(s3 && !$('.dk.tmp', dock)) s3.remove();
   }
   function dockTop(){ var d = $('#dock'); if(!d) return desk.clientHeight - 84; return Math.round(d.getBoundingClientRect().top - desk.getBoundingClientRect().top); }
   /* the area windows may occupy. A bottom dock reserves its strip; a side dock reserves its column instead; an auto-hidden dock reserves nothing (it slides over the windows, like macOS) */
@@ -899,22 +906,16 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   /* ---------------- users + easter eggs ---------------- */
   var USER = { name:'chase' };
   var USERS = { chase:{ pw:null, home:'/Users/chase', shell:'%' }, ariel:{ pw:'love', home:'/Users/ariel', shell:'%' }, greggyd:{ pw:'..', home:'/home/greggyd', shell:'$' } };
-  var ORIG_TILES = null;
-  function heartsOn(){ if(!ORIG_TILES){ ORIG_TILES = $$('.tile use').map(function(u){ return [u, u.getAttribute('href')]; }); } $$('.tile use').forEach(function(u){ u.setAttribute('href', '#i-heart'); }); }
-  function heartsOff(){ if(ORIG_TILES){ ORIG_TILES.forEach(function(p){ p[0].setAttribute('href', p[1]); }); } }
+  /* every tile glyph turns into a heart for Ariel; each remembers its own glyph (data-h0), so tiles made later (a dock icon, a desktop alias) turn and come back too */
+  function heartsOn(){ $$('.tile use').forEach(function(u){ if(!u.hasAttribute('data-h0')) u.setAttribute('data-h0', u.getAttribute('href')); u.setAttribute('href', '#i-heart'); }); }
+  function heartsOff(){ $$('.tile use[data-h0]').forEach(function(u){ u.setAttribute('href', u.getAttribute('data-h0')); u.removeAttribute('data-h0'); }); }
   /* the active user survives a tab close: saved beside the prefs (localStorage, cookie fallback for the embed) and restored at boot without the pop-up */
   var USTORE = { get:function(){ var v = null; try { v = localStorage.getItem('tigos.user'); } catch(e){} if(!v){ try { var m = document.cookie.match(/(?:^|; )tigos\.user=([^;]*)/); if(m) v = decodeURIComponent(m[1]); } catch(e){} } return v && USERS[v] ? v : 'chase'; },
     set:function(v){ try { localStorage.setItem('tigos.user', v); } catch(e){} try { document.cookie = 'tigos.user='+encodeURIComponent(v)+'; max-age=31536000; path=/; SameSite=Lax'; } catch(e){} } };
   function fillHearts(box, n, big){ box.innerHTML = ''; for(var i = 0; i < n; i++){ var h = document.createElement('i'); h.style.left = (Math.random()*100)+'%'; h.style.animationDuration = (big ? 5 : 14)+Math.random()*(big ? 6 : 12)+'s'; h.style.animationDelay = (-Math.random()*(big ? 9 : 24))+'s'; h.style.width = h.style.height = (big ? 14+Math.random()*22 : 10+Math.random()*18)+'px'; h.innerHTML = ic('heart'); box.appendChild(h); } }
-  /* GreggyD and Ariel keep Pets and the Arcade in the dock (Chase's dock stays the portfolio); the icons sit with the apps, before the separator */
-  function userDock(){
-    var dock = $('#dock'); if(!dock) return; var want = USER.name === 'chase' ? [] : ['games', 'pets'];
-    $$('.dk.xtra', dock).forEach(function(d){ if(want.indexOf(d.getAttribute('data-dock')) < 0) d.remove(); });
-    var sep = $('.sep', dock);
-    want.forEach(function(id){ if($('.dk.xtra[data-dock="'+id+'"]', dock)) return; var b = document.createElement('button'); b.className = 'dk xtra'; b.type = 'button'; b.setAttribute('data-open', id); b.setAttribute('data-dock', id); b.setAttribute('aria-label', APPS[id].title);
-      b.innerHTML = tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span>'; dock.insertBefore(b, sep); });
-    $$('.dk.tmp', dock).forEach(function(d){ if(want.indexOf(d.getAttribute('data-dock')) > -1) d.remove(); });
-  }
+  /* each user has their own Dock and desktop (27-dock-edit.js, 27-desktop.js). GreggyD and Ariel keep Pets and the Arcade in theirs by
+     default (Chase's stays the portfolio), as .xtra icons with the apps, before the separator */
+  function userDock(){ if(!DESKS) return; dockBuild(); drender(); }
   function setUser(name, quiet){
     USER.name = name; root.classList.remove('u-ariel', 'u-greggyd'); heartsOff(); USTORE.set(name);
     var wh = $('#wallHearts'); if(wh) wh.innerHTML = '';
@@ -928,7 +929,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   var loginEl = $('#login'), loginPw = $('#loginPw'), loginIn = $('#loginIn'), loginSel = null;
   var USER_META = { chase:{ label:'Chase Johnston', sub:'Admin' }, ariel:{ label:'Ariel', sub:'' }, greggyd:{ label:'greggyd', sub:'' } };
   function loginScreen(){
-    Object.keys(WM.wins).forEach(function(k){ close(WM.wins[k]); }); pw.hidden = true; menu.hidden = true; mbLogo.classList.remove('on');
+    Object.keys(WM.wins).forEach(function(k){ close(WM.wins[k]); }); pw.hidden = true; menu.hidden = true; mbLogo.classList.remove('on'); ctxClose(true);
     /* Chase always; the other profile only if that is who was logged in (so GreggyD's or Ariel's tile appears after their own session, never before) */
     var others = USER.name !== 'chase' && USERS[USER.name] ? [USER.name] : [], tux = $('#tux .tux-svg');
     var avatar = function(u){ return u === 'greggyd' ? (tux ? tux.outerHTML.replace('class="tux-svg"', 'class="av-tux"') : 'G') : u === 'ariel' ? ic('heart') : 'A'; };
@@ -951,6 +952,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     loginT = setTimeout(function(){
       loginEl.hidden = true; loginEl.classList.remove('leaving');
       if(u !== USER.name) setUser(u);
+      loginItems();   /* the apps this user set to Open at Login */
       var g = greeting(); toast(u === 'chase' ? 'Welcome back, Chase' : g.t, 'Logged in as '+u+'@tigos.', g.i);
       setTimeout(function(){ root.classList.remove('entering'); }, 1400);
     }, 550);
@@ -1268,7 +1270,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var on = false, ox = 0, oy = 0, moved = false, hot = false;
     var overBin = function(){ var b = petBin.getBoundingClientRect(), r = el.getBoundingClientRect(), cx = r.left + r.width/2, cy = r.top + r.height/2; return cx > b.left - 24 && cx < b.right + 24 && cy > b.top - 24 && cy < b.bottom + 24; };
     el.addEventListener('pointerdown', function(e){
-      if(el.classList.contains('poof') || el.classList.contains('abduct')) return;
+      if(el.classList.contains('poof') || el.classList.contains('abduct') || e.button > 0 || e.ctrlKey) return;   /* a right-click is for the pet's menu (27-menus.js), not a pick-up */
       on = true; moved = false; hot = false;
       var r = el.getBoundingClientRect();
       ox = e.clientX - r.left; oy = e.clientY - r.top;
@@ -1796,7 +1798,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
 
 /* tigOS core app.js, part 16: settings. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- settings (persisted) ---------------- */
-  var PREF = { theme:'dark', accent:'orange', text:'md', dock:'md', dockpos:'bottom', dockhide:'off', motion:'on', cursor:'block', pet:'', petsize:'md', wall:'live', saver:'drift', idle:'10' };
+  var PREF = { theme:'dark', accent:'orange', text:'md', dock:'md', dockpos:'bottom', dockhide:'off', dockmag:'on', motion:'on', cursor:'block', pet:'', petsize:'md', wall:'live', saver:'drift', idle:'10' };
   var STORE = {
     get: function(){ var raw = null; try { raw = localStorage.getItem('tigos.prefs'); } catch(e){} if(!raw){ try { var m = document.cookie.match(/(?:^|; )tigos\.prefs=([^;]*)/); if(m) raw = decodeURIComponent(m[1]); } catch(e){} } return raw; },
     set: function(raw){ try { localStorage.setItem('tigos.prefs', raw); } catch(e){} try { document.cookie = 'tigos.prefs='+encodeURIComponent(raw)+'; max-age=31536000; path=/; SameSite=None; Secure'; document.cookie = 'tigos.prefs='+encodeURIComponent(raw)+'; max-age=31536000; path=/; SameSite=Lax'; } catch(e){} }
@@ -1811,6 +1813,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     root.classList.remove('dock-sm', 'dock-lg'); if(PREF.dock !== 'md') root.classList.add('dock-'+PREF.dock);
     root.classList.remove('dock-left', 'dock-right'); if(PREF.dockpos !== 'bottom') root.classList.add('dock-'+PREF.dockpos);
     root.classList.toggle('dock-hide', PREF.dockhide === 'on');
+    root.classList.toggle('dock-nomag', PREF.dockmag === 'off');
     root.classList.toggle('rm', PREF.motion === 'off');
     if(typeof WALL !== 'undefined') wallApply();
     root.classList.remove('cur-block', 'cur-line', 'cur-underline'); root.classList.add('cur-'+(PREF.cursor || 'block'));
@@ -1836,6 +1839,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   RENDER.settings = function(w){
     var seg = function(key, opts){ return '<div class="seg" data-pref="'+key+'">'+opts.map(function(o){ return '<button type="button" data-v="'+o[0]+'" class="'+(PREF[key] === o[0] ? 'on' : '')+'">'+o[1]+'</button>'; }).join('')+'</div>'; };
     var sw = '<div class="seg" data-pref="accent">'+Object.keys(ACCENTS).map(function(k){ return '<button type="button" class="sw '+(PREF.accent === k ? 'on' : '')+'" data-v="'+k+'" style="background:'+ACCENTS[k]+'" aria-label="'+k+'"></button>'; }).join('')+'</div>';
+    var dseg = function(key, opts){ return '<div class="seg" data-dview="'+key+'">'+opts.map(function(o){ return '<button type="button" data-v="'+o[0]+'" class="'+(String(dview(key)) === o[0] ? 'on' : '')+'">'+o[1]+'</button>'; }).join('')+'</div>'; };   /* desktop view, saved per user (27-desktop.js) */
     var row = function(t, sub, ctl){ return '<div class="set-row"><div class="lbl"><b>'+t+'</b><span>'+sub+'</span></div><div>'+ctl+'</div></div>'; };
     /* the pet picker: one chip per pet with a live mini of the pet inside, plus None. Chips are .pet elements so the same rig draws them */
     var cur = PREF.pet && PETS[PREF.pet] ? PREF.pet : '';
@@ -1848,7 +1852,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       (isMobile() ? '' :
       row('Dock size', '', seg('dock', [['sm','Small'],['md','Medium'],['lg','Large']]))+
       row('Dock position', 'Bottom, left or right.', seg('dockpos', [['bottom','Bottom'],['left','Left'],['right','Right']]))+
-      row('Auto-hide dock', 'Slides away until you reach for it.', seg('dockhide', [['off','Off'],['on','On']])))+
+      row('Auto-hide dock', 'Slides away until you reach for it.', seg('dockhide', [['off','Off'],['on','On']]))+
+      row('Magnification', 'Icons grow as the pointer passes.', seg('dockmag', [['on','On'],['off','Off']])))+
+      (isMobile() ? '' : row('Dock apps', 'Drag icons to rearrange them, or off the Dock to remove them.', '<button type="button" class="set-btn" data-dock-reset>Reset Dock\u2026</button>'))+   /* a phone resets its dock from the dock itself: hold the space beside the icons */
+      '<div class="set-group"><div class="eyebrow">Desktop</div></div>'+
+      row('Desktop icons', 'Hiding them hides the welcome text too.', dseg('icons', [['true','Show'],['false','Hide']]))+
+      row('Welcome text', 'The hello on an empty desktop.', dseg('hero', [['true','Show'],['false','Hide']]))+
+      row('Icon size', '', dseg('size', [['sm','S'],['md','M'],['lg','L']]))+
       (isMobile() ? '' : row('Terminal cursor', 'Block is the default.', seg('cursor', [['block','Block'],['line','Line'],['underline','Underline']])))+
       row('Wallpaper', 'Live adds depth that follows the mouse.', seg('wall', [['live','Live'],['still','Still']]))+
       row('Screensaver', esc(PREF.saver === 'random' ? 'A different one each time.' : (SAVERS[PREF.saver] || SAVERS.drift).sub+'.'), seg('saver', Object.keys(SAVERS).map(function(k){ return [k, SAVERS[k].name]; }).concat([['random','Random']])))+
@@ -1858,11 +1868,13 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       row('Desktop pet', PREF.pet && PETS[PREF.pet] ? esc(PETS[PREF.pet].name)+' the '+esc(PETS[PREF.pet].label)+' is out. Drag them anywhere; drop them on the X to say goodbye.' : 'A 3D companion that lives on the desktop. Pick one.', pick)+
       row('Pet size', '', '<div class="pet-ctl">'+seg('petsize', [['sm','Small'],['md','Medium'],['lg','Large']])+'<button type="button" class="pet-more" data-open-pets>Open Pets</button></div>')+
       '<div class="set-foot"><span>tigOS 2.0 \u00b7 '+VIS().length+' apps</span><button type="button" data-reset>Reset to defaults</button></div></div>';
-    $$('.seg button', w.body).forEach(function(b){ b.addEventListener('click', function(){ setPref(b.parentNode.getAttribute('data-pref'), b.getAttribute('data-v')); }); });
+    $$('.seg[data-pref] button', w.body).forEach(function(b){ b.addEventListener('click', function(){ setPref(b.parentNode.getAttribute('data-pref'), b.getAttribute('data-v')); }); });
+    $$('.seg[data-dview] button', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.parentNode.getAttribute('data-dview'), v = b.getAttribute('data-v'); dviewSet(k, v === 'true' ? true : v === 'false' ? false : v); }); });
+    var drs = $('[data-dock-reset]', w.body); if(drs) drs.addEventListener('click', dockResetAsk);
     $$('[data-pet-pick]', w.body).forEach(function(b){ b.addEventListener('click', function(){ var k = b.getAttribute('data-pet-pick'); if(!k){ if(!PREF.pet) return; var el = petEl(); if(el) petGoodbye(el); else petSet(''); return; } if(k === PREF.pet) return; petSet(k); toast(PETS[k].name+' is out', 'Bottom right. Drag them wherever you like.'); }); });
     var op = $('[data-open-pets]', w.body); if(op) op.addEventListener('click', function(){ open('pets'); });
     pet3Scan(w.body);
-    $('[data-reset]', w.body).addEventListener('click', function(){ PREF = { theme:'dark', accent:'orange', text:'md', dock:'md', dockpos:'bottom', dockhide:'off', motion:'on', cursor:'block', pet:'', petsize:'md', wall:'live', saver:'drift', idle:'10' }; applyPrefs(); RENDER.settings(w); toast('Settings reset', 'Back to the defaults.'); });
+    $('[data-reset]', w.body).addEventListener('click', function(){ PREF = { theme:'dark', accent:'orange', text:'md', dock:'md', dockpos:'bottom', dockhide:'off', dockmag:'on', motion:'on', cursor:'block', pet:'', petsize:'md', wall:'live', saver:'drift', idle:'10' }; applyPrefs(); RENDER.settings(w); toast('Settings reset', 'Back to the defaults.'); });
   };
 
 /* tigOS core app.js, part 17: lightbox. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
@@ -2037,7 +2049,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
       var eg = $('.egg:not([hidden])'); if(eg){ eg.hidden = true; return; }
     }
     if(meta && (e.key === 'w' || e.key === 'W')){ var t = topWin(); if(t){ e.preventDefault(); close(t); } }
-    if(!meta && !e.altKey && spot.hidden && !e.target.closest('input,textarea') && !$('.win.focus[data-app="games"]') && /^[1-8]$/.test(e.key)){ open(DOCK_ORDER[+e.key-1]); }
+    if(!meta && !e.altKey && spot.hidden && !e.target.closest('input,textarea') && !$('.win.focus[data-app="games"]') && /^[1-9]$/.test(e.key)){ var nth = dockList()[+e.key-1]; if(nth) open(nth); }   /* 1 to 9: the Dock's apps in their current order */
   });
 
 /* tigOS core app.js, part 23: tour. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
@@ -2247,6 +2259,871 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   }, 2000);
   new MutationObserver(function(){ if(!sleepEl.hidden) IDLE.shown = performance.now(); }).observe(sleepEl, { attributes:true, attributeFilter:['hidden'] });
   sleepEl.addEventListener('pointermove', function(e){ if(e.pointerType !== 'touch' && performance.now() - IDLE.shown > 1500) wake(); });
+/* tigOS core app.js, part 27: context menus. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
+  /* ---------------- context menus ----------------
+     One engine for every right-click (a two-finger click, a control-click, or a long press on a phone). ctxShow(items, x, y, o) draws a
+     macOS-style menu at a point in desktop coordinates, or above / beside a dock icon, and keeps it inside the desktop (which is the whole
+     iframe when the site is embedded). It runs from the mouse (hover opens submenus, press-drag-release picks an item), the keyboard
+     (arrows, Return, Escape, a letter jumps) or a finger. An item is
+       { t:label, i:icon, k:shortcut hint (hidden on a phone), note:a quiet aside, on:checked, dis:disabled, fn:action, sub:[items] or a function returning them, dot:colour, id:test hook }
+     '-' draws a separator, { h:'Label' } a section heading, { tags:current, fn:function(colour) } the row of colour tags. Falsy entries are
+     skipped, so a menu reads as a list of conditions. What goes in each menu lives in 27-menus.js; the desktop and dock behind it in
+     27-desktop.js and 27-dock-edit.js. The browser keeps its own menu wherever it is the useful one: text, links and everything inside an app window. */
+  var CTX = { stack:[], maxB:0, touch:false, held:false, moved:false, x0:0, y0:0, swallow:false, lp:null, touchT:0, last:null, onClose:null, src:null, cls:'', hoverT:0, vw:0 };
+  var TAGS = [['red', '#ff5f57', 'Red'], ['orange', '#ff9f0a', 'Orange'], ['yellow', '#ffd60a', 'Yellow'], ['green', '#32d74b', 'Green'], ['blue', '#0a84ff', 'Blue'], ['purple', '#bf5af2', 'Purple'], ['gray', '#98989d', 'Gray']];
+  function tagHex(t){ for(var i = 0; i < TAGS.length; i++) if(TAGS[i][0] === t) return TAGS[i][1]; return ''; }
+  var CTX_CHECK = '<svg class="cx" viewBox="0 0 12 12"><path d="M2.4 6.5l2.4 2.4 4.8-5.5"/></svg>', CTX_MORE = '<svg class="cv" viewBox="0 0 12 12"><path d="M4.5 2.5L8 6l-3.5 3.5"/></svg>';
+  function ctxSlug(s){ return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+  function ctxIsItem(it){ return it && typeof it === 'object' && !it.h && !('tags' in it); }
+  /* drop falsy entries, doubled and dangling separators; a heading after other items gets its separator like a macOS section */
+  function ctxClean(items){
+    var out = [];
+    (items || []).forEach(function(it){
+      if(!it) return;
+      if(it === '-'){ if(out.length && out[out.length-1] !== '-') out.push('-'); return; }
+      if(it.h && out.length && out[out.length-1] !== '-') out.push('-');
+      out.push(it);
+    });
+    while(out.length && out[out.length-1] === '-') out.pop();
+    return out;
+  }
+  function ctxBuild(items, level){
+    var m = document.createElement('div'), ck = items.some(function(it){ return ctxIsItem(it) && 'on' in it; }), hasIc = items.some(function(it){ return ctxIsItem(it) && (it.i || it.dot); });
+    m.className = 'menu ctx'+(level ? ' sub' : '')+(ck ? ' has-ck' : '');
+    m.setAttribute('role', 'menu');
+    m.innerHTML = items.map(function(it, i){
+      if(it === '-') return '<hr>';
+      if(it.h) return '<div class="ch" role="presentation">'+esc(it.h)+'</div>';
+      if('tags' in it) return '<div class="ctags" role="group" aria-label="Tags" data-i="'+i+'">'+TAGS.map(function(t){ return '<button type="button" class="ctag'+(it.tags === t[0] ? ' on' : '')+'" data-tag="'+t[0]+'" style="--tc:'+t[1]+'" aria-label="'+t[2]+'" aria-pressed="'+(it.tags === t[0] ? 'true' : 'false')+'" title="'+t[2]+'"></button>'; }).join('')+'</div>';
+      var chk = 'on' in it;
+      return '<button type="button" class="ci'+(it.dis ? ' dis' : '')+(it.sub ? ' has-sub' : '')+(it.danger ? ' danger' : '')+'" role="'+(chk ? 'menuitemcheckbox' : 'menuitem')+'" data-i="'+i+'" data-ctx="'+esc(it.id || ctxSlug(it.t))+'"'+
+        (chk ? ' aria-checked="'+(it.on ? 'true' : 'false')+'"' : '')+(it.dis ? ' aria-disabled="true"' : '')+(it.sub ? ' aria-haspopup="menu" aria-expanded="false"' : '')+'>'+
+        (ck ? '<span class="cc">'+(it.on ? CTX_CHECK : '')+'</span>' : '')+
+        (it.dot ? '<span class="cdot" style="background:'+it.dot+'"></span>' : it.i ? ic(it.i) : hasIc ? '<span class="ci0"></span>' : '')+
+        '<span class="cl">'+esc(it.t)+'</span>'+(it.k ? '<span class="kb">'+esc(it.k)+'</span>' : it.note ? '<span class="kb kn">'+esc(it.note)+'</span>' : '')+(it.sub ? CTX_MORE : '')+'</button>';
+    }).join('');
+    return m;
+  }
+  /* x, y are desktop (root) coordinates. A plain menu opens down and right of the pointer and slides up or flips left to stay on screen,
+     the way macOS does; side:'top' | 'left' | 'right' hangs it off a dock icon; sub:true opens beside its parent row (or on its far side) */
+  function ctxPlace(m, x, y, o){
+    o = o || {};
+    var W = root.clientWidth, H = root.clientHeight, M = 6;
+    m.style.left = '0px'; m.style.top = '0px'; m.style.maxHeight = (H - 2*M)+'px';
+    var mw = m.offsetWidth, mh = m.offsetHeight, l, t;
+    if(o.side === 'top'){ l = x - mw/2; t = y - mh - 10; }
+    else if(o.side === 'right'){ l = x + 12; t = y - mh/2; }
+    else if(o.side === 'left'){ l = x - mw - 12; t = y - mh/2; }
+    else if(o.sub){ l = x; t = y; if(l + mw > W - M) l = o.x2 - mw; }
+    else if(o.at){ l = x; t = y; }
+    else { l = x + 2; t = y + 2; if(l + mw > W - M) l = x - mw - 2; if(t + mh > H - M) t = H - M - mh; }
+    var B = o.maxB > mh + M ? o.maxB : H - M;   /* a submenu of a menu hung over the bottom dock stays above the dock too */
+    l = Math.max(M, Math.min(W - M - mw, l)); t = Math.max(M, Math.min(B - mh, t));
+    m.style.left = Math.round(l)+'px'; m.style.top = Math.round(t)+'px';
+  }
+  function ctxOpen(){ return CTX.stack.length > 0; }
+  function ctxShow(items, x, y, o){
+    o = o || {};
+    ctxClose(true);
+    if(typeof closePops === 'function') closePops('ctx');
+    if(!spot.hidden) spotClose();
+    items = ctxClean(items); if(!items.length) return;
+    var m = ctxBuild(items, 0); root.appendChild(m);
+    CTX.stack = [{ el:m, items:items, sel:-1, parent:-1 }];
+    ctxPlace(m, x, y, o); ctxWire(m, 0);
+    CTX.onClose = o.onClose || null; CTX.src = o.src || null; CTX.cls = o.cls || ''; CTX.maxB = o.side === 'top' ? y - 4 : 0;
+    if(CTX.src) CTX.src.classList.add('ctx-on');
+    if(CTX.cls) root.classList.add(CTX.cls);
+    root.classList.add('ctx-up');
+    CTX.vw = root.clientWidth;
+    return m;
+  }
+  function ctxClose(instant){
+    clearTimeout(CTX.hoverT);
+    if(!CTX.stack.length) return;
+    CTX.stack.forEach(function(L){ var m = L.el; m.classList.add('out'); if(instant) m.remove(); else setTimeout(function(){ m.remove(); }, 150); });
+    CTX.stack = []; CTX.held = false;
+    if(CTX.src){ CTX.src.classList.remove('ctx-on'); CTX.src = null; }
+    if(CTX.cls){ root.classList.remove(CTX.cls); CTX.cls = ''; }
+    root.classList.remove('ctx-up');
+    var f = CTX.onClose; CTX.onClose = null; if(f) f();
+  }
+  function ctxMark(level, i){
+    var L = CTX.stack[level]; if(!L) return; L.sel = i;
+    $$(':scope > .ci', L.el).forEach(function(b){ b.classList.toggle('on', +b.getAttribute('data-i') === i); });
+  }
+  function ctxTrim(n){
+    while(CTX.stack.length > n){ var L = CTX.stack.pop(); L.el.remove(); }
+    var P = CTX.stack[n-1]; if(P){ P.el.classList.remove('under'); $$('.ci.open', P.el).forEach(function(b){ b.classList.remove('open'); b.setAttribute('aria-expanded', 'false'); }); }
+  }
+  function ctxSub(level, i){
+    ctxTrim(level + 1);
+    var L = CTX.stack[level], it = L && L.items[i]; if(!it || !it.sub || it.dis) return;
+    var items = ctxClean(typeof it.sub === 'function' ? it.sub() : it.sub); if(!items.length) return;
+    var drill = CTX.touch || isMobile();   /* a phone has no room beside a menu: the submenu takes its place, with a way back, like iOS */
+    if(drill) items = [{ t:it.t, i:'back', id:'back', back:true }, '-'].concat(items);
+    var m = ctxBuild(items, level + 1); root.appendChild(m);
+    var b = $('.ci[data-i="'+i+'"]', L.el), br = b.getBoundingClientRect(), pr = L.el.getBoundingClientRect(), rr = root.getBoundingClientRect();
+    if(drill){ m.classList.add('drill'); ctxPlace(m, pr.left - rr.left, pr.top - rr.top, { at:true, maxB:CTX.maxB }); L.el.classList.add('under'); }
+    else ctxPlace(m, pr.right - rr.left - 4, br.top - rr.top - 6, { sub:true, x2:pr.left - rr.left + 4, maxB:CTX.maxB });
+    CTX.stack.push({ el:m, items:items, sel:-1, parent:i });
+    b.classList.add('open'); b.setAttribute('aria-expanded', 'true');
+    ctxWire(m, level + 1);
+  }
+  /* the mouse: hovering a row highlights it, a submenu row opens its submenu after a beat, any other row closes an open one after a
+     slightly longer beat (time enough to cut the corner into the submenu, macOS's forgiving diagonal) */
+  function ctxHover(level, i){
+    var L = CTX.stack[level]; if(!L) return;
+    ctxMark(level, i); clearTimeout(CTX.hoverT);
+    if(level > 0) { ctxMark(level - 1, L.parent); var pb = $('.ci[data-i="'+L.parent+'"]', CTX.stack[level-1].el); if(pb) pb.classList.add('open'); }
+    var it = L.items[i], deeper = CTX.stack.length > level + 1;
+    if(it.sub && !it.dis){ if(deeper && CTX.stack[level+1].parent === i){ ctxTrim(level + 2); return; } CTX.hoverT = setTimeout(function(){ if(CTX.stack[level] === L) ctxSub(level, i); }, deeper ? 160 : 70); }
+    else if(deeper){ CTX.hoverT = setTimeout(function(){ if(CTX.stack[level] === L) ctxTrim(level + 1); }, 220); }
+  }
+  function ctxAct(level, i, kb){
+    var L = CTX.stack[level], it = L && L.items[i]; if(!ctxIsItem(it) || it.dis) return;
+    if(it.back){ var p = L.parent; ctxTrim(level); ctxMark(level - 1, p); return; }
+    if(it.sub){ if(!(CTX.stack.length > level + 1 && CTX.stack[level+1].parent === i)) ctxSub(level, i); if(kb && CTX.stack[level+1]) ctxMark(level + 1, ctxNext(level + 1, -1, 1)); return; }   /* the keys land on its first row; a click just opens it */
+    ctxClose();
+    if(it.fn) it.fn();
+  }
+  function ctxWire(m, level){
+    m.addEventListener('pointermove', function(e){
+      if(e.pointerType === 'touch') return;   /* a finger sliding over a row is a scroll or a tap, not a hover */
+      var b = e.target.closest('.ci'); if(!b || !m.contains(b)) return;
+      var i = +b.getAttribute('data-i'), L = CTX.stack[level]; if(!L) return;
+      if(L.sel !== i || (level > 0 && CTX.stack[level-1].sel !== L.parent)) ctxHover(level, i);
+    });
+    m.addEventListener('pointerleave', function(){ var L = CTX.stack[level]; if(L && CTX.stack.length === level + 1) ctxMark(level, -1); });
+    m.addEventListener('click', function(e){
+      var tg = e.target.closest('.ctag');
+      if(tg){ var row = tg.closest('.ctags'), L = CTX.stack[level], it = L && L.items[+row.getAttribute('data-i')], v = tg.getAttribute('data-tag'); ctxClose(); if(it && it.fn) it.fn(v === it.tags ? '' : v); return; }
+      var b = e.target.closest('.ci'); if(b) ctxAct(level, +b.getAttribute('data-i'));
+    });
+  }
+  function ctxNext(level, from, dir){
+    var L = CTX.stack[level]; if(!L) return -1; var n = L.items.length;
+    for(var k = 1; k <= n; k++){ var j = ((from < 0 && dir < 0 ? n : from) + dir*k + n*4) % n, it = L.items[j]; if(ctxIsItem(it) && !it.dis) return j; }
+    return -1;
+  }
+  /* the keyboard owns a menu while it is up: arrows move, right/left walk submenus, Return or Space picks, Escape backs out, a letter jumps */
+  document.addEventListener('keydown', function(e){
+    if(!CTX.stack.length) return;
+    var lv = CTX.stack.length - 1, L = CTX.stack[lv], k = e.key;
+    if(e.metaKey || e.ctrlKey){ ctxClose(); return; }
+    e.preventDefault(); e.stopPropagation();
+    if(k === 'Escape'){ if(lv){ var p = L.parent; ctxTrim(lv); ctxMark(lv - 1, p); } else ctxClose(); return; }
+    if(k === 'ArrowDown' || k === 'ArrowUp'){ ctxMark(lv, ctxNext(lv, L.sel, k === 'ArrowDown' ? 1 : -1)); return; }
+    if(k === 'ArrowRight'){ var it = L.items[L.sel]; if(it && it.sub && !it.dis){ ctxSub(lv, L.sel); ctxMark(lv + 1, ctxNext(lv + 1, -1, 1)); } return; }
+    if(k === 'ArrowLeft' || (k === 'Backspace' && lv)){ if(lv){ var pp = L.parent; ctxTrim(lv); ctxMark(lv - 1, pp); } return; }
+    if(k === 'Enter' || k === ' '){ if(L.sel >= 0) ctxAct(lv, L.sel, true); return; }
+    if(k === 'Tab'){ ctxMark(lv, ctxNext(lv, L.sel, e.shiftKey ? -1 : 1)); return; }
+    if(k.length === 1 && /\S/.test(k)){
+      var n = L.items.length, low = k.toLowerCase();
+      for(var s = 1; s <= n; s++){ var j = ((L.sel < 0 ? -1 : L.sel) + s + n) % n, x = L.items[j]; if(ctxIsItem(x) && !x.dis && String(x.t).toLowerCase().indexOf(low) === 0){ ctxMark(lv, j); break; } }
+    }
+  }, true);
+  /* dismissal. A click outside closes the menu and goes no further (macOS: the first click only dismisses). CTX.swallow eats the one
+     click that can follow the press which opened a menu (control-click, a long press), so a dock icon under a finger never also opens */
+  document.addEventListener('pointerdown', function(e){
+    CTX.swallow = false;
+    if(!CTX.stack.length) return;
+    if(e.target.closest && e.target.closest('.ctx')) return;
+    ctxClose(); CTX.swallow = true;
+  }, true);
+  document.addEventListener('click', function(e){ if(CTX.swallow && e.isTrusted){ CTX.swallow = false; e.preventDefault(); e.stopPropagation(); } }, true);
+  /* press, drag to an item, release: picks it, like holding the right button on a Mac. A release without moving leaves the menu up */
+  document.addEventListener('pointermove', function(e){ if(CTX.held && !CTX.moved && Math.abs(e.clientX - CTX.x0) + Math.abs(e.clientY - CTX.y0) > 6) CTX.moved = true; }, true);
+  document.addEventListener('pointerup', function(e){
+    if(!CTX.held) return; CTX.held = false;
+    if(!CTX.moved || !CTX.stack.length) return;
+    var b = e.target.closest && e.target.closest('.ctx .ci');
+    if(!b){ if(!(e.target.closest && e.target.closest('.ctx'))) ctxClose(); return; }
+    var m = b.closest('.ctx'), lv = -1; CTX.stack.forEach(function(L, n){ if(L.el === m) lv = n; });
+    var it = lv > -1 && CTX.stack[lv].items[+b.getAttribute('data-i')];
+    if(it && !it.sub && !it.dis) ctxAct(lv, +b.getAttribute('data-i'));
+  }, true);
+  window.addEventListener('blur', function(){ ctxClose(); });
+  window.addEventListener('resize', function(){ if(CTX.stack.length && root.clientWidth !== CTX.vw) ctxClose(true); });   /* a phone's browser bar sliding changes only the height: keep the menu */
+  root.addEventListener('wheel', function(e){ if(CTX.stack.length && !(e.target.closest && e.target.closest('.ctx'))) ctxClose(); }, { passive:true });
+  /* what was right-clicked. null = leave the browser's own menu; 'none' = no menu at all (the menubar, the lock and sleep screens) */
+  function ctxTarget(t, touch){
+    if(!t || !t.closest || !root.contains(t)) return null;
+    if(t.closest('.ctx')) return { kind:'none' };
+    if(t.closest('input, textarea, select, [contenteditable="true"]')) return null;
+    if(t.closest('#login, #sleep, #off, #shutdown, #boot, .dlg-bg')) return touch ? null : { kind:'none' };
+    if(t.closest('#spotlight, #lightbox, .egg, .tour-tip, .toast')) return null;
+    var fw = t.closest('.fw');
+    if(fw){ var fi = t.closest('.dicon'); return fi ? { kind:'icon', el:fi } : { kind:'fbg', el:fw }; }
+    if(t.closest('.win-body')) return null;
+    var bar = t.closest('.win-bar');
+    if(bar){ if(touch || isMobile() || t.closest('a[href]')) return null; return { kind:'win', el:bar.closest('.win') }; }
+    if(t.closest('.win')) return null;
+    var dk = t.closest('#dock .dk');
+    if(dk) return { kind:dk.classList.contains('trash') ? 'trash' : dk.tagName === 'A' ? 'link' : 'dock', el:dk };
+    if(t.closest('#dock')) return { kind:'dockbg', el:$('#dock') };
+    var pet = t.closest('#pets .pet');
+    if(pet) return touch ? null : { kind:'pet', el:pet };
+    var di = t.closest('.dicon');
+    if(di) return { kind:'icon', el:di };
+    if(t.closest('a[href]')) return null;   /* a link in the welcome text keeps the browser's link menu */
+    if(t.closest('#desktop')) return { kind:'desk', el:desk };
+    if(t.closest('.menubar')) return touch || t.closest('a[href]') ? null : { kind:'none' };
+    return null;
+  }
+  function dockSide(){ if(isMobile()) return 'bottom'; if(root.classList.contains('u-greggyd')) return 'left'; return PREF.dockpos === 'left' || PREF.dockpos === 'right' ? PREF.dockpos : 'bottom'; }
+  /* build the menu for a target (27-menus.js) and show it at the pointer, or hung off the dock icon it belongs to */
+  function ctxOpenAt(tg, x, y, o){
+    o = o || {};
+    var f = CTX_MENUS[tg.kind]; if(!f) return null;
+    var rr = root.getBoundingClientRect(), lx = x - rr.left, ly = y - rr.top;
+    var spec = f(tg, lx, ly, o); if(!spec || !spec.items) return null;
+    var side = '', px = lx, py = ly;
+    if(spec.anchor || spec.atDock){   /* atDock: the Dock's own menu, at the pointer along the dock but clear of it */
+      var r = spec.anchor ? spec.anchor.getBoundingClientRect() : { left:x, top:y, width:0, height:0 }, d = $('#dock').getBoundingClientRect(), s = dockSide();
+      if(s === 'left'){ side = 'right'; px = d.right - rr.left; py = r.top + r.height/2 - rr.top; }
+      else if(s === 'right'){ side = 'left'; px = d.left - rr.left; py = r.top + r.height/2 - rr.top; }
+      else { side = 'top'; px = r.left + r.width/2 - rr.left; py = d.top - rr.top; }
+    }
+    CTX.touch = !!o.touch;
+    var m = ctxShow(spec.items, px, py, { side:side, src:spec.src || null, cls:spec.cls || '', onClose:spec.onClose });
+    if(!m) return null;
+    CTX.held = !!o.held; CTX.moved = false; CTX.x0 = x; CTX.y0 = y; CTX.swallow = true;
+    return m;
+  }
+  root.addEventListener('contextmenu', function(e){
+    var touchy = Date.now() - CTX.touchT < 1500, tg = ctxTarget(e.target, touchy);
+    if(!tg) return;
+    e.preventDefault();
+    if(tg.kind === 'none') return;
+    if(touchy){ if(CTX.lp) lpFire(); return; }   /* Android sends contextmenu for a long press; the long-press timer is the one path for touch, so just fire it now */
+    ctxOpenAt(tg, e.clientX, e.clientY, { held:(e.buttons & 3) !== 0 });
+  });
+  /* touch: hold still for half a second. Moving more than 10px (a scroll, a drag), a second finger (a pinch) or lifting early cancels it */
+  function lpCancel(){ if(CTX.lp){ clearTimeout(CTX.lp.t); if(CTX.lp.tg.el) CTX.lp.tg.el.classList.remove('lp'); CTX.lp = null; } }
+  function lpFire(){
+    var lp = CTX.lp; if(!lp) return; clearTimeout(lp.t); CTX.lp = null; if(lp.tg.el) lp.tg.el.classList.remove('lp');
+    if(ctxOpenAt(lp.tg, lp.x, lp.y, { touch:true })){ try { if(navigator.vibrate) navigator.vibrate(10); } catch(_){} }
+  }
+  root.addEventListener('pointerdown', function(e){
+    if(e.pointerType !== 'touch') return;
+    CTX.touchT = Date.now();
+    if(CTX.lp){ lpCancel(); return; }   /* a second finger: a pinch, not a press */
+    if(!e.isPrimary) return;
+    var tg = ctxTarget(e.target, true); if(!tg || tg.kind === 'none') return;
+    CTX.lp = { id:e.pointerId, x:e.clientX, y:e.clientY, tg:tg, t:setTimeout(lpFire, 500) };
+    if(tg.el && tg.kind !== 'desk') tg.el.classList.add('lp');
+  }, true);
+  root.addEventListener('pointermove', function(e){ if(CTX.lp && e.pointerId === CTX.lp.id && Math.abs(e.clientX - CTX.lp.x) + Math.abs(e.clientY - CTX.lp.y) > 10) lpCancel(); }, true);
+  ['pointerup', 'pointercancel'].forEach(function(ev){ root.addEventListener(ev, function(e){ if(CTX.lp && e.pointerId === CTX.lp.id) lpCancel(); CTX.touchT = e.pointerType === 'touch' ? Date.now() : CTX.touchT; }, true); });
+  /* a small macOS sheet for the questions that need one (Empty Trash). Return confirms, Escape cancels */
+  function sheet(title, text, ok, fn){
+    var old = $('.dlg-bg'); if(old) old.remove();
+    ctxClose(true);
+    var bg = document.createElement('div'); bg.className = 'dlg-bg';
+    bg.innerHTML = '<div class="dlg" role="alertdialog" aria-modal="true" aria-label="'+esc(title)+'"><svg class="dlg-logo" viewBox="0 0 96 96"><use href="#tgLogo"/></svg><b>'+esc(title)+'</b><p>'+esc(text)+'</p><div class="dlg-row"><button type="button" data-no>Cancel</button><button type="button" class="ok" data-ok>'+esc(ok)+'</button></div></div>';
+    root.appendChild(bg);
+    var done = function(yes){ bg.classList.add('out'); setTimeout(function(){ bg.remove(); }, 160); if(yes) fn(); };
+    $('[data-ok]', bg).addEventListener('click', function(){ done(true); });
+    $('[data-no]', bg).addEventListener('click', function(){ done(false); });
+    bg.tabIndex = -1;
+    bg.addEventListener('pointerdown', function(e){ if(e.target === bg){ e.preventDefault(); var d = $('.dlg', bg); d.classList.remove('nope'); void d.offsetWidth; d.classList.add('nope'); } });   /* a click beside a sheet nudges it, like macOS, and keeps the keyboard on it */
+    bg.addEventListener('keydown', function(e){ e.stopPropagation(); if(e.key === 'Escape'){ e.preventDefault(); done(false); } if(e.key === 'Enter' && !e.target.closest('[data-no]')){ e.preventDefault(); done(true); } });
+    setTimeout(function(){ try { $('[data-ok]', bg).focus({ preventScroll:true }); } catch(e){} }, 20);
+    return bg;
+  }
+/* tigOS core app.js, part 27: desktop items. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
+  /* ---------------- desktop: icons, folders, the Trash, Get Info ----------------
+     Saved per user on this device (localStorage, a cookie fallback for the embed): the desktop items (app aliases and folders, each on a
+     grid cell counted from the top right, like macOS), what the desktop shows (icons, the welcome text, icon size, sort order), the dock
+     layout (27-dock-edit.js) and the apps that open at login. A fresh visit has none of it: the clean hero, the dock as the launcher.
+     An item is { id, kind:'app'|'folder', app, name, in:'' (desktop) | folder id | 'trash', c, r, t:added, tag, from, fc, fr }. */
+  var DSTORE = {
+    get: function(){ var raw = null; try { raw = localStorage.getItem('tigos.desk'); } catch(e){} if(!raw){ try { var m = document.cookie.match(/(?:^|; )tigos\.desk=([^;]*)/); if(m) raw = decodeURIComponent(m[1]); } catch(e){} } return raw; },
+    set: function(raw){ try { localStorage.setItem('tigos.desk', raw); } catch(e){} try { var v = encodeURIComponent(raw); if(v.length < 3600){ document.cookie = 'tigos.desk='+v+'; max-age=31536000; path=/; SameSite=None; Secure'; document.cookie = 'tigos.desk='+v+'; max-age=31536000; path=/; SameSite=Lax'; } } catch(e){} }
+  };
+  var DESKS = {}; try { DESKS = JSON.parse(DSTORE.get() || '{}') || {}; if(typeof DESKS !== 'object' || Array.isArray(DESKS)) DESKS = {}; } catch(e){ DESKS = {}; }
+  function DK(){
+    var d = DESKS[USER.name]; if(!d || typeof d !== 'object') d = DESKS[USER.name] = {};
+    if(!d.items || typeof d.items !== 'object') d.items = {}; if(!d.view || typeof d.view !== 'object') d.view = {}; if(!(d.seq > 0)) d.seq = 1; if(!Array.isArray(d.login)) d.login = [];
+    return d;
+  }
+  function deskSave(){ DSTORE.set(JSON.stringify(DESKS)); }
+  var DVIEW = { icons:true, hero:true, size:'md', sort:'grid' };
+  function dview(k){ var v = DK().view; return k in v ? v[k] : DVIEW[k]; }
+  function dviewSet(k, v){ var d = DK(); if(v === DVIEW[k]) delete d.view[k]; else d.view[k] = v; deskSave(); drender(); }
+  function ditem(id){ return DK().items[id] || null; }
+  function dlive(it){ return it && (it.kind === 'folder' || (it.kind === 'app' && APPS[it.app] && !APPS[it.app].sys)); }
+  function ditems(where){ var d = DK(); return Object.keys(d.items).map(function(k){ return d.items[k]; }).filter(function(it){ return dlive(it) && (it.in || '') === where; }); }
+  function dinside(it){ return it.in && it.in !== 'trash' && ditem(it.in) ? it.in : (it.in === 'trash' ? 'trash' : ''); }
+  function dwhere(it){ var w = dinside(it); return w === 'trash' ? 'Trash' : w ? ditem(w).name : 'Desktop'; }
+  function dkids(fid){ return ditems(fid); }
+  function dnameFree(name, where, skip){ return !ditems(where).some(function(x){ return x.id !== skip && x.name.toLowerCase() === name.toLowerCase(); }); }
+  function dnameNew(base, where){ var n = base, i = 2; while(!dnameFree(n, where)) n = base+' '+(i++); return n; }
+  function dnew(kind, props){
+    var d = DK(), id = 'd'+(d.seq++);
+    var it = { id:id, kind:kind, app:'', name:'', in:'', c:-1, r:-1, t:Date.now(), tag:'' };
+    Object.keys(props || {}).forEach(function(k){ it[k] = props[k]; });
+    d.items[id] = it; return it;
+  }
+  function dalias(app){ return ditems('').filter(function(x){ return x.kind === 'app' && x.app === app; })[0] || null; }
+  function dsize(){ return dview('size'); }
+  /* the grid: on a desktop, columns from the top right down then leftward (macOS); on a phone, rows from just above the dock up,
+     left to right, so icons sit under the thumb and clear of the welcome text */
+  function dgrid(){
+    var mob = isMobile(), s = (mob ? { sm:40, md:48, lg:56 } : { sm:44, md:58, lg:74 })[dsize()] || 58, cw = s + (mob ? 30 : 40), ch = s + (mob ? 36 : 44);
+    var W = desk.clientWidth, H = desk.clientHeight, g = { s:s, cw:cw, ch:ch, mob:mob };
+    if(mob){
+      var bot = Math.min(H - 8, dockTop() - 6); g.cols = Math.max(1, Math.floor((W - 12)/cw)); g.rows = Math.max(1, Math.floor((bot - 8)/ch));
+      g.x = function(c){ return 6 + c*cw; }; g.y = function(r){ return bot - (r + 1)*ch; };
+      g.at = function(px, py){ return { c:Math.max(0, Math.min(g.cols - 1, Math.floor((px - 6)/cw))), r:Math.max(0, Math.min(g.rows - 1, Math.floor((bot - py)/ch))) }; };
+      g.nth = function(n){ return { c:n % g.cols, r:Math.floor(n / g.cols) }; };
+      g.idx = function(c, r){ return r*g.cols + c; };
+    } else {
+      var a = area(), x1 = a.x1 - 10, top = 10, y1 = Math.min(a.y1, H - 6);
+      g.cols = Math.max(1, Math.floor((x1 - a.x0 - 10)/cw)); g.rows = Math.max(1, Math.floor((y1 - top)/ch));
+      g.x = function(c){ return x1 - (c + 1)*cw; }; g.y = function(r){ return top + r*ch; };
+      g.at = function(px, py){ return { c:Math.max(0, Math.min(g.cols - 1, Math.floor((x1 - px)/cw))), r:Math.max(0, Math.min(g.rows - 1, Math.floor((py - top)/ch))) }; };
+      g.nth = function(n){ return { c:Math.floor(n / g.rows), r:n % g.rows }; };
+      g.idx = function(c, r){ return c*g.rows + r; };
+    }
+    return g;
+  }
+  function dcmp(by){
+    var kind = function(x){ return x.kind === 'folder' ? 0 : 1; }, nm = function(a, b){ return a.name.localeCompare(b.name, undefined, { numeric:true, sensitivity:'base' }); };
+    if(by === 'kind') return function(a, b){ return kind(a) - kind(b) || nm(a, b); };
+    if(by === 'date') return function(a, b){ return b.t - a.t || nm(a, b); };
+    return nm;
+  }
+  /* where each desktop item is drawn: sorted views pack in order; the free grid keeps every saved cell it can and gives the rest the next
+     free cell. A cell that fell off a smaller screen is only borrowed, so the icon goes back when the window grows */
+  var DPOS = {}, DLAYOUT_NEW = false;
+  function dlayout(g){
+    var its = ditems(''), taken = {}, pos = {}, sort = dview('sort'), key = function(c, r){ return c+','+r; };
+    if(sort !== 'grid'){ its.sort(dcmp(sort)).forEach(function(it, i){ var p = g.nth(i); pos[it.id] = p; }); return pos; }
+    its.sort(function(a, b){ return a.t - b.t; });
+    var rest = []; DLAYOUT_NEW = false;
+    its.forEach(function(it){ if(it.c >= 0 && it.r >= 0 && it.c < g.cols && it.r < g.rows && !taken[key(it.c, it.r)]){ taken[key(it.c, it.r)] = 1; pos[it.id] = { c:it.c, r:it.r }; } else rest.push(it); });
+    var n = 0;
+    rest.forEach(function(it){ var p; do { p = g.nth(n++); } while(taken[key(p.c, p.r)] && n < 4000); taken[key(p.c, p.r)] = 1; pos[it.id] = p; if(it.c < 0){ it.c = p.c; it.r = p.r; DLAYOUT_NEW = true; } });
+    return pos;
+  }
+  /* the nearest free cell to (c, r), for a drop onto an occupied spot */
+  function dnear(g, c, r, taken){
+    var best = null, bd = 1e9;
+    for(var cc = 0; cc < g.cols; cc++) for(var rr = 0; rr < g.rows; rr++){ if(taken[cc+','+rr]) continue; var dd = (cc - c)*(cc - c) + (rr - r)*(rr - r); if(dd < bd){ bd = dd; best = { c:cc, r:rr }; } }
+    return best || { c:c, r:r };
+  }
+  var FOLDER_SVG = '<svg class="dfold" viewBox="0 0 64 52" aria-hidden="true"><path class="fb" d="M4 9a5 5 0 0 1 5-5h14.6a4 4 0 0 1 3 1.4L30 9h25a5 5 0 0 1 5 5v29a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="fbs" d="M4 9a5 5 0 0 1 5-5h14.6a4 4 0 0 1 3 1.4L30 9h25a5 5 0 0 1 5 5v29a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="ff" d="M4 18a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path class="fs" d="M4 18a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v25a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z" fill="url(#lgFold)"/><path class="fh" d="M8.5 15.2h47"/></svg>';
+  function dart(it){ return it.kind === 'folder' ? FOLDER_SVG : tileHTML(it.app); }
+  function diconHTML(it){ return '<span class="dart"'+(it.kind === 'folder' && it.tag ? ' style="--fc:'+tagHex(it.tag)+'"' : '')+'>'+dart(it)+'</span><span class="dlab">'+(it.tag ? '<i class="dtag" style="background:'+tagHex(it.tag)+'"></i>' : '')+'<span class="dname">'+esc(it.name)+'</span></span>'; }
+  function dmake(it){
+    var el = document.createElement('div');
+    el.className = 'dicon'; el.setAttribute('data-id', it.id); el.setAttribute('data-kind', it.kind); if(it.app) el.setAttribute('data-app', it.app);
+    el.setAttribute('role', 'button'); el.setAttribute('aria-label', it.name+(it.kind === 'folder' ? ', folder' : ''));
+    el.innerHTML = diconHTML(it); el._sig = diconHTML(it);
+    return el;
+  }
+  function dsync(el, it){ var h = diconHTML(it); if(el._sig !== h && !el.querySelector('input')){ el.innerHTML = h; el._sig = h; el.setAttribute('aria-label', it.name+(it.kind === 'folder' ? ', folder' : '')); } }
+  var DLAYER = document.createElement('div'); DLAYER.className = 'dicons'; DLAYER.id = 'dicons'; DLAYER.setAttribute('aria-label', 'Desktop'); desk.insertBefore(DLAYER, winsEl);
+  function drender(){
+    if(!DLAYER) return;
+    var g = dgrid(), pos = dlayout(g), its = ditems(''), have = {};
+    DPOS = pos; if(DLAYOUT_NEW){ DLAYOUT_NEW = false; deskSave(); }   /* a new item keeps the cell it was first given */
+    root.style.setProperty('--di', g.s+'px'); root.style.setProperty('--dcw', g.cw+'px');
+    $$('.dicon', DLAYER).forEach(function(el){ have[el.getAttribute('data-id')] = el; });
+    its.forEach(function(it){
+      var el = have[it.id]; delete have[it.id];
+      if(!el){ el = dmake(it); el.classList.add('new'); DLAYER.appendChild(el); setTimeout(function(){ el.classList.remove('new'); }, 420); } else dsync(el, it);
+      var p = pos[it.id]; el.style.left = g.x(p.c)+'px'; el.style.top = g.y(p.r)+'px'; el.style.width = g.cw+'px';
+    });
+    Object.keys(have).forEach(function(k){ have[k].remove(); });
+    var icons = dview('icons'), hero = dview('hero');
+    root.classList.toggle('desk-noicons', !icons); root.classList.toggle('desk-nohero', !icons || !hero);
+    fsyncAll(); trashLook();
+    if(USER.name === 'ariel') heartsOn();
+    var sw = WM.wins.settings; if(sw) $$('[data-dview]', sw.body).forEach(function(g){ var k = g.getAttribute('data-dview'); $$('button', g).forEach(function(b){ b.classList.toggle('on', String(dview(k)) === b.getAttribute('data-v')); }); });
+  }
+  var drT = 0; window.addEventListener('resize', function(){ cancelAnimationFrame(drT); drT = requestAnimationFrame(drender); });
+  /* selection: one set at a time, inside the desktop or one folder window, like Finder */
+  var DFOCUS = null;
+  function dhost(el){ return el.closest('.fw') || DLAYER; }
+  function dsels(host){ return $$('.dicon.sel', host || root).filter(function(e){ return !e.closest('.dghost'); }); }
+  function dselIds(host){ return dsels(host).map(function(e){ return e.getAttribute('data-id'); }); }
+  function dselClear(except){ $$('.dicon.sel').forEach(function(e){ if(e !== except) e.classList.remove('sel'); }); }
+  function dselOnly(el){ dselClear(el); el.classList.add('sel'); DFOCUS = dhost(el); }
+  function dflash(id){ var el = $('.dicon[data-id="'+id+'"]', DLAYER); if(!el) return; dselOnly(el); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+  /* rename in place: Return or a click away keeps it, Escape puts the old name back */
+  var DREN = null;
+  function drename(id){
+    var it = ditem(id); if(!it) return;
+    if(DREN) DREN.done(true);
+    var host = dinside(it) === '' ? DLAYER : $('.fw[data-folder="'+dinside(it)+'"]'), el = host && $('.dicon[data-id="'+id+'"]', host); if(!el) return;
+    var nm = $('.dname', el), inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'dren'; inp.value = it.name; inp.maxLength = 40; inp.spellcheck = false; inp.setAttribute('aria-label', 'Name');
+    nm.replaceWith(inp); dselOnly(el); el.classList.add('renaming');
+    var where = dinside(it), live = true;
+    DREN = { id:id, done:function(keep){
+      if(!live) return; live = false; DREN = null; el.classList.remove('renaming'); if(inp.parentNode) inp.replaceWith(nm);
+      var v = inp.value.replace(/\s+/g, ' ').trim().slice(0, 40);
+      if(keep && v && v !== it.name){
+        if(!dnameFree(v, where, id)){ toast('The name \u201c'+v+'\u201d is already taken', 'Please choose a different name.'); }
+        else { it.name = v; deskSave(); }
+      }
+      el._sig = ''; dsync(el, it); drender(); fsyncAll(); winTitles();
+    } };
+    inp.addEventListener('keydown', function(e){ e.stopPropagation(); if(e.key === 'Enter'){ e.preventDefault(); DREN && DREN.done(true); } if(e.key === 'Escape'){ e.preventDefault(); DREN && DREN.done(false); } });
+    inp.addEventListener('blur', function(){ if(DREN && DREN.id === id) DREN.done(true); });
+    inp.addEventListener('pointerdown', function(e){ e.stopPropagation(); });
+    setTimeout(function(){ inp.focus(); inp.select(); }, 0);
+  }
+  function dnewFolder(at, withIds){
+    var d = DK(), where = '', it = dnew('folder', { name:dnameNew('untitled folder', '') });
+    if(at){ var g = dgrid(), want = g.at(at.x, at.y), taken = {}; Object.keys(DPOS).forEach(function(k){ if((withIds || []).indexOf(k) < 0) taken[DPOS[k].c+','+DPOS[k].r] = 1; }); var p = taken[want.c+','+want.r] ? dnear(g, want.c, want.r, taken) : want; it.c = p.c; it.r = p.r; }
+    (withIds || []).forEach(function(id){ var x = d.items[id]; if(x && x.kind !== 'folder'){ x.in = it.id; x.c = -1; x.r = -1; } });
+    delete d.view.icons;   /* a new folder always shows, even on a desktop whose icons were hidden */
+    deskSave(); drender(); drename(it.id);
+    return it;
+  }
+  function daddApp(app, quiet){
+    var ex = dalias(app); if(ex){ if(!dview('icons')) dviewSet('icons', true); dflash(ex.id); return ex; }
+    var it = dnew('app', { app:app, name:APPS[app].title });
+    delete DK().view.icons;
+    deskSave(); drender(); dflash(it.id);
+    if(!quiet) toast(APPS[app].title+' is on the Desktop', isMobile() ? 'Tap it to open, hold it for options.' : 'Double-click it to open. Right-click for more.');
+    return it;
+  }
+  function dopen(id, from){
+    var it = ditem(id); if(!it) return;
+    if(DREN && DREN.id === id) return;
+    if(it.in === 'trash'){ toast('\u201c'+it.name+'\u201d is in the Trash', 'Put it back first, then open it.'); return; }
+    if(it.kind === 'folder'){ fopen(id, from); return; }
+    if(APPS[it.app]) open(it.app, { from:from });
+  }
+  function dmove(ids, where){
+    var d = DK(), n = 0;
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.id === where) return; if(it.kind === 'folder' && where !== '' && where !== 'trash') return; if((it.in || '') === where) return; if(!dnameFree(it.name, where, id)) it.name = dnameNew(it.name, where); it.in = where; it.c = -1; it.r = -1; delete it.from; n++; });
+    if(n){ deskSave(); drender(); }
+    return n;
+  }
+  /* ---------- the Trash: items keep where they came from, so Put Back works; emptying it is for good ---------- */
+  function dtrash(ids){
+    var d = DK(), n = 0;
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in === 'trash') return; it.from = dinside(it); it.fc = it.c; it.fr = it.r; it.in = 'trash'; it.t2 = Date.now(); n++; var fw = WM.wins['fold-'+id]; if(fw) close(fw); });
+    if(n){ deskSave(); drender(); var tk = $('#dock .dk.trash'); if(tk){ tk.classList.remove('gulp'); void tk.offsetWidth; tk.classList.add('gulp'); } }
+    return n;
+  }
+  function dputBack(ids){
+    var d = DK(), g = dgrid(), taken = {}, n = 0;
+    Object.keys(DPOS).forEach(function(k){ taken[DPOS[k].c+','+DPOS[k].r] = 1; });
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; var back = it.from && it.from !== 'trash' && d.items[it.from] && d.items[it.from].in !== 'trash' ? it.from : '';
+      it.in = back; if(back === ''){ if(it.fc >= 0 && !taken[it.fc+','+it.fr]){ it.c = it.fc; it.r = it.fr; } else { it.c = -1; it.r = -1; } if(it.c >= 0) taken[it.c+','+it.r] = 1; it.name = dnameFree(it.name, '', id) ? it.name : dnameNew(it.name, ''); }
+      delete it.from; delete it.fc; delete it.fr; delete it.t2; n++; });
+    if(n){ deskSave(); drender(); }
+    return n;
+  }
+  function dtrashed(){ return ditems('trash'); }
+  function dempty(){
+    var d = DK(), gone = {};
+    dtrashed().forEach(function(it){ gone[it.id] = 1; });
+    Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(gone[k] || (it.in && gone[it.in])) { var fw = WM.wins['fold-'+k]; if(fw) close(fw); delete d.items[k]; } });
+    deskSave(); drender();
+  }
+  function demptyAsk(){
+    var n = dtrashed().length; if(!n) return;
+    sheet('Are you sure you want to permanently erase the '+(n === 1 ? 'item' : n+' items')+' in the Trash?', 'You can\u2019t undo this action.', 'Empty Trash', function(){ dempty(); toast('Trash emptied', n === 1 ? '1 item erased.' : n+' items erased.'); });
+  }
+  function trashLook(){ var tk = $('#dock .dk.trash'); if(!tk) return; var full = dtrashed().length > 0; tk.classList.toggle('full', full); var u = $('.tile use', tk); if(u && !u.hasAttribute('data-h0')) u.setAttribute('href', full ? '#i-trash-full' : '#i-trash'); else if(u) u.setAttribute('data-h0', full ? '#i-trash-full' : '#i-trash'); }
+  /* ---------- folder and Trash windows: Finder-style icon views ---------- */
+  APPS.trash = { title:'Trash', icon:'trash', tile:'trash', w:640, h:430, hidden:true, sys:'trash' };
+  APPS.info = { title:'Info', icon:'info', tile:'info', w:320, h:480, hidden:true, sys:'info' };
+  function fkey(id){ return 'fold-'+id; }
+  function fopen(id, from){
+    var it = ditem(id); if(!it || it.kind !== 'folder') return;
+    var k = fkey(id);
+    APPS[k] = { title:it.name, icon:'folder', tile:'folder', w:640, h:430, hidden:true, sys:'folder', folder:id };
+    RENDER[k] = function(w){ fdraw(w, id); };
+    return open(k, { from:from });
+  }
+  function fgrid(list, where){
+    if(!list.length) return '<div class="fw-empty">'+(where === 'trash' ? 'The Trash is empty.' : 'This folder is empty.'+(isMobile() ? '' : ' Drag items here.'))+'</div>';
+    return '<div class="fw-grid">'+list.map(function(it){ return '<div class="dicon fi" data-id="'+it.id+'" data-kind="'+it.kind+'"'+(it.app ? ' data-app="'+it.app+'"' : '')+' role="button" aria-label="'+esc(it.name)+'">'+diconHTML(it)+'</div>'; }).join('')+'</div>';
+  }
+  function fdraw(w, id){
+    var it = ditem(id); if(!it){ return; }
+    var list = dkids(id).sort(dcmp('name')), sel = dselIds(w.body);
+    w.body.innerHTML = '<div class="fw" data-folder="'+id+'">'+fgrid(list, id)+'<div class="fw-foot">'+(list.length === 1 ? '1 item' : list.length+' items')+'</div></div>';
+    sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', w.body); if(e) e.classList.add('sel'); });
+  }
+  RENDER.trash = function(w){
+    var list = dtrashed().sort(function(a, b){ return (b.t2 || 0) - (a.t2 || 0); }), sel = dselIds(w.body);
+    w.tools.innerHTML = '<button type="button" data-empty'+(list.length ? '' : ' disabled')+'>Empty</button>';
+    $('[data-empty]', w.tools).addEventListener('click', demptyAsk);
+    w.body.innerHTML = '<div class="fw trashw" data-folder="trash">'+fgrid(list, 'trash')+'<div class="fw-foot">'+(list.length === 1 ? '1 item' : list.length+' items')+'</div></div>';
+    sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', w.body); if(e) e.classList.add('sel'); });
+  };
+  function fsyncAll(){
+    Object.keys(WM.wins).forEach(function(k){ var w = WM.wins[k], a = APPS[k]; if(!a) return;
+      if(a.sys === 'folder'){ var it = ditem(a.folder); if(!it || it.in === 'trash'){ close(w); return; } fdraw(w, a.folder); }
+      if(a.sys === 'trash') RENDER.trash(w);
+      if(a.sys === 'info' && INFO.t) RENDER.info(w);
+    });
+  }
+  function winTitles(){
+    Object.keys(WM.wins).forEach(function(k){ var a = APPS[k]; if(!a || a.sys !== 'folder') return; var it = ditem(a.folder); if(!it || a.title === it.name) return; a.title = it.name;
+      var w = WM.wins[k], t = $('.win-title', w.el); if(t) t.innerHTML = ic('folder')+esc(it.name); w.el.setAttribute('aria-label', it.name); var tip = $('.dk.tmp[data-dock="'+k+'"] .tip'); if(tip) tip.textContent = it.name; });
+    updateChrome();
+  }
+  /* ---------- Get Info: one panel, re-aimed at whatever was asked about ---------- */
+  var INFO = { t:null };
+  function infoFmt(t){ try { return new Date(t).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false }); } catch(e){ return ''; } }
+  function infoShow(t){
+    INFO.t = t;
+    var w = WM.wins.info;
+    if(w){ RENDER.info(w); if(w.min) restore(w); focus(w); return w; }
+    return open('info');
+  }
+  RENDER.info = function(w){
+    var t = INFO.t || { type:'desk' }, rows = [], head = '', name = '', kind = '', sub = '', tags = null, ren = null;
+    var row = function(k, v){ rows.push('<div class="gi-r"><span>'+esc(k)+'</span><b>'+v+'</b></div>'); };
+    if(t.type === 'item'){
+      var it = ditem(t.id); if(!it || !dlive(it)){ INFO.t = { type:'desk' }; RENDER.info(w); return; }
+      name = it.name; head = '<span class="gi-art">'+(it.kind === 'folder' ? '<span class="dart"'+(it.tag ? ' style="--fc:'+tagHex(it.tag)+'"' : '')+'>'+FOLDER_SVG+'</span>' : tileHTML(it.app))+'</span>';
+      if(it.kind === 'folder'){ var n = dkids(it.id).length; kind = 'Folder'; sub = n === 1 ? '1 item' : n+' items'; row('Kind', 'Folder'); row('Contains', esc(sub)); }
+      else { kind = 'Alias'; sub = 'Opens '+esc(APPS[it.app].title); row('Kind', 'Alias'); row('Original', esc(APPS[it.app].title)+' (app)'); row('In the Dock', dockHas(it.app) ? 'Yes' : 'No'); }
+      row('Where', esc(dwhere(it))); row('Added', esc(infoFmt(it.t)));
+      if(it.in === 'trash' && it.t2) row('Trashed', esc(infoFmt(it.t2)));
+      tags = it.tag || ''; ren = it.id;
+    } else if(t.type === 'app'){
+      var a = APPS[t.app]; if(!a){ INFO.t = { type:'desk' }; RENDER.info(w); return; }
+      name = a.title; kind = 'Application'; sub = 'tigOS 2.0'; head = '<span class="gi-art">'+tileHTML(t.app)+'</span>';
+      row('Kind', 'Application'); row('Version', 'tigOS 2.0'); row('In the Dock', dockHas(t.app) ? 'Yes' : 'No'); row('Open at Login', DK().login.indexOf(t.app) > -1 ? 'Yes' : 'No');
+      if(t.app === 'resume') row('Document', 'One page \u00b7 PDF');
+      if(t.app === 'projects') row('Case studies', String(TIG.projects.length));
+    } else if(t.type === 'trash'){
+      var tn = dtrashed().length; name = 'Trash'; kind = 'Trash'; sub = tn === 1 ? '1 item' : tn+' items'; head = '<span class="gi-art">'+tileHTML('trash')+'</span>';
+      row('Kind', 'Trash'); row('Contains', esc(sub)); row('Where', 'Dock');
+    } else {
+      var all = Object.keys(DK().items).map(function(k){ return DK().items[k]; }).filter(dlive), on = all.filter(function(x){ return !x.in; }).length, inF = all.filter(function(x){ return x.in && x.in !== 'trash'; }).length;
+      name = 'Desktop'; kind = 'Folder'; sub = on === 1 ? '1 item' : on+' items'; head = '<span class="gi-art"><span class="dart">'+FOLDER_SVG+'</span></span>';
+      row('Kind', 'Folder'); row('Where', esc(USERS[USER.name] ? USERS[USER.name].home : '/Users/'+USER.name)); row('On the Desktop', esc(sub)); row('In folders', String(inF)); row('In the Trash', String(dtrashed().length));
+      row('Display', esc(Math.round(root.clientWidth)+' \u00d7 '+Math.round(root.clientHeight)+(window.devicePixelRatio > 1 ? ' @'+(Math.round(window.devicePixelRatio*10)/10)+'x' : '')));
+      row('System', 'tigOS 2.0'+(window.TIG_BUILD && TIG_BUILD.v ? ' ('+esc(TIG_BUILD.v)+')' : ''));
+    }
+    APPS.info.title = name+' Info';
+    var tt = $('.win-title', w.el); if(tt) tt.innerHTML = ic('info')+esc(name)+' Info';
+    w.el.setAttribute('aria-label', name+' Info');
+    var tagRow = tags === null ? '' : '<div class="gi-sec"><div class="eyebrow">Tags</div><div class="gi-tags">'+TAGS.map(function(tg){ return '<button type="button" class="ctag'+(tags === tg[0] ? ' on' : '')+'" data-tag="'+tg[0]+'" style="--tc:'+tg[1]+'" aria-label="'+tg[2]+'" aria-pressed="'+(tags === tg[0] ? 'true' : 'false')+'" title="'+tg[2]+'"></button>'; }).join('')+'</div></div>';
+    var nameRow = ren ? '<div class="gi-sec"><div class="eyebrow">Name</div><input class="gi-name" type="text" maxlength="40" spellcheck="false" aria-label="Name" value="'+esc(name)+'"></div>' : '';
+    w.body.innerHTML = '<div class="gi"><div class="gi-head">'+head+'<div><b>'+esc(name)+'</b><span>'+esc(kind)+(sub && sub !== kind ? ' \u00b7 '+sub : '')+'</span></div></div>'+
+      '<div class="gi-sec"><div class="eyebrow">General</div>'+rows.join('')+'</div>'+nameRow+tagRow+'</div>';
+    $$('.gi-tags .ctag', w.body).forEach(function(b){ b.addEventListener('click', function(){ var v = b.getAttribute('data-tag'); dtag([ren], v === tags ? '' : v); }); });
+    var ni = $('.gi-name', w.body);
+    if(ni){ var commit = function(){ var it2 = ditem(ren), v = ni.value.replace(/\s+/g, ' ').trim().slice(0, 40); if(!it2 || !v || v === it2.name) { ni.value = it2 ? it2.name : ''; return; } if(!dnameFree(v, dinside(it2), ren)){ toast('The name \u201c'+v+'\u201d is already taken', 'Please choose a different name.'); ni.value = it2.name; return; } it2.name = v; deskSave(); drender(); winTitles(); };
+      ni.addEventListener('keydown', function(e){ if(e.key === 'Enter'){ e.preventDefault(); ni.blur(); } if(e.key === 'Escape'){ e.stopPropagation(); var it3 = ditem(ren); ni.value = it3 ? it3.name : ''; ni.blur(); } });
+      ni.addEventListener('change', commit); ni.addEventListener('blur', commit); }
+  };
+  function dtag(ids, v){ var d = DK(); ids.forEach(function(id){ var it = d.items[id]; if(it) it.tag = v || ''; }); deskSave(); drender(); }
+  /* ---------- pointer: click selects, double-click opens (a tap opens on a phone), drag moves, drop into a folder, the Trash or the Dock ---------- */
+  root.addEventListener('pointerdown', function(e){
+    var el = e.target.closest && e.target.closest('.dicon');
+    if(DREN && !(el && el.classList.contains('renaming'))) DREN.done(true);
+    if(!el || el.closest('.dghost')){
+      var t = e.target; if(!t.closest || t.closest('.ctx, .dlg-bg')) return;
+      var fw = t.closest('.fw'); if(fw){ DFOCUS = fw; if(e.button === 0 && !(e.metaKey || e.shiftKey)) dselClear(); return; }
+      if(!t.closest('#desktop') || t.closest('.win')) DFOCUS = null;
+      return;
+    }
+    if(e.button !== 0 || e.target.closest('input')) return;
+    var host = dhost(el); DFOCUS = host;
+    if(e.metaKey || e.shiftKey){ el.classList.toggle('sel'); $$('.dicon.sel').forEach(function(x){ if(dhost(x) !== host) x.classList.remove('sel'); }); if(!el.classList.contains('sel')) return; }
+    else if(!el.classList.contains('sel')) dselOnly(el);
+    if(e.pointerType === 'touch') return;
+    e.preventDefault();
+    var sx = e.clientX, sy = e.clientY, st = null, plain = !(e.metaKey || e.shiftKey);
+    var mv = function(ev){ if(!st){ if(Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 6) return; st = idragStart(el, host, sx, sy); } idragMove(st, ev); };
+    var up = function(ev){ document.removeEventListener('pointermove', mv, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('pointercancel', up, true); if(st) idragEnd(st, ev); else if(plain && ev.type === 'pointerup') dselOnly(el); };
+    document.addEventListener('pointermove', mv, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true);
+  });
+  root.addEventListener('dblclick', function(e){ var el = e.target.closest && e.target.closest('.dicon'); if(!el || el.closest('.dghost') || e.target.closest('input')) return; dopen(el.getAttribute('data-id'), el); });
+  root.addEventListener('click', function(e){
+    var el = e.target.closest && e.target.closest('.dicon'); if(!el || el.closest('.dghost') || e.target.closest('input')) return;
+    if(Date.now() - CTX.touchT < 900) dopen(el.getAttribute('data-id'), el);   /* a finger has no double-click: one tap opens */
+  });
+  function idragStart(el, host, sx, sy){
+    var sel = dsels(host); if(sel.indexOf(el) < 0) sel = [el];
+    var gh = document.createElement('div'), rr = root.getBoundingClientRect(); gh.className = 'dghost';
+    sel.forEach(function(s){ var r = s.getBoundingClientRect(), c = s.cloneNode(true); c.classList.remove('new', 'flash', 'drop-on'); c.style.left = (r.left - rr.left)+'px'; c.style.top = (r.top - rr.top)+'px'; c.style.width = r.width+'px'; gh.appendChild(c); s.classList.add('dragging'); });
+    root.appendChild(gh); root.classList.add('icon-dragging');
+    return { el:el, host:host, sel:sel, ids:sel.map(function(s){ return s.getAttribute('data-id'); }), gh:gh, sx:sx, sy:sy, over:null, drop:{ kind:'none' }, dx:0, dy:0 };
+  }
+  function idropAt(t, st){
+    if(!t || !t.closest) return { kind:'none' };
+    var d = DK(), its = st.ids.map(function(id){ return d.items[id]; }).filter(Boolean), apps = its.every(function(x){ return x.kind === 'app'; }), folders = its.some(function(x){ return x.kind === 'folder'; }), from = st.host === DLAYER ? '' : st.host.getAttribute('data-folder');
+    var tk = t.closest('#dock .dk.trash'); if(tk) return from === 'trash' ? { kind:'none' } : { kind:'trash', el:tk };
+    if(t.closest('#dock')) return apps && from !== 'trash' ? { kind:'dock', el:$('#dock') } : { kind:'none' };
+    var fi = t.closest('.dicon[data-kind="folder"]');
+    if(fi && st.ids.indexOf(fi.getAttribute('data-id')) < 0 && !fi.closest('.trashw') && !fi.closest('.dghost')) return folders ? { kind:'none' } : { kind:'folder', id:fi.getAttribute('data-id'), el:fi };
+    var win = t.closest('.win');
+    if(win){ var a = APPS[win.dataset.app] || {};
+      if(a.sys === 'folder') return folders || from === a.folder ? { kind:'none', el:null } : { kind:'folder', id:a.folder, el:win };
+      if(a.sys === 'trash') return from === 'trash' ? { kind:'none' } : { kind:'trash', el:win };
+      return { kind:'none' }; }
+    if(t.closest('#desktop')) return { kind:'desk' };
+    return { kind:'none' };
+  }
+  function idragMove(st, ev){
+    st.dx = ev.clientX - st.sx; st.dy = ev.clientY - st.sy;
+    st.gh.style.transform = 'translate('+st.dx+'px,'+st.dy+'px)';
+    var drop = idropAt(document.elementFromPoint(ev.clientX, ev.clientY), st), on = drop.el || null;
+    if(st.over !== on){ if(st.over) st.over.classList.remove('drop-on'); st.over = on; if(on) on.classList.add('drop-on'); }
+    if(drop.kind === 'dock'){ if(st.addable == null){ var dd = DK(); st.addable = st.ids.some(function(id){ var x = dd.items[id]; return x && x.kind === 'app' && !dockHas(x.app); }); } if(st.addable) dockGapAt(ev.clientX, ev.clientY); }
+    else dockGapClear();
+    st.gh.classList.toggle('no', drop.kind === 'none'); st.gh.classList.toggle('copy', drop.kind === 'dock');
+    st.drop = drop;
+  }
+  function idragEnd(st, ev){
+    idragMove(st, ev);
+    if(st.over) st.over.classList.remove('drop-on');
+    root.classList.remove('icon-dragging'); CTX.swallow = true;
+    var drop = st.drop, d = DK(), gh = st.gh, from = st.host === DLAYER ? '' : st.host.getAttribute('data-folder');
+    var unhide = function(){ st.sel.forEach(function(s){ s.classList.remove('dragging'); }); };
+    var sink = function(){ gh.classList.add('sink'); setTimeout(function(){ gh.remove(); }, 220); };
+    if(drop.kind === 'trash'){ sink(); dtrash(st.ids); unhide(); return; }
+    if(drop.kind === 'folder'){ sink(); var n = dmove(st.ids, drop.id); unhide(); if(n){ var f = $('.dicon[data-id="'+drop.id+'"]', DLAYER); if(f){ f.classList.remove('flash'); void f.offsetWidth; f.classList.add('flash'); } } return; }
+    if(drop.kind === 'dock'){ var added = [], at = dockGapIndex(); dockGapClear(true); st.ids.forEach(function(id){ var it = d.items[id]; if(it && it.kind === 'app' && !dockHas(it.app)){ dockPin(it.app, true, at >= 0 ? at++ : -1); added.push(APPS[it.app].title); } else if(it && it.kind === 'app'){ dockBounce(it.app); } });
+      if(added.length) toast(added.length === 1 ? added[0]+' is in the Dock' : added.length+' apps added to the Dock', 'Right-click it there for options.');
+      snapBack(); return; }
+    if(drop.kind === 'desk' && !(from === '' && dview('sort') !== 'grid')){
+      var g = dgrid(), dr = desk.getBoundingClientRect(), taken = {}, moving = {}, anchorEl = st.sel[0], ar = anchorEl.getBoundingClientRect();
+      st.ids.forEach(function(id){ moving[id] = 1; });
+      Object.keys(DPOS).forEach(function(k){ if(!moving[k]) taken[DPOS[k].c+','+DPOS[k].r] = 1; });
+      var cx = ar.left + ar.width/2 + st.dx - dr.left, cy = ar.top + Math.min(ar.height, g.s)/2 + st.dy - dr.top, tgt = g.at(cx, cy), a0 = DPOS[st.ids[0]] || null;
+      var starts = st.sel.map(function(s){ var r = s.getBoundingClientRect(); return { x:r.left - dr.left + st.dx, y:r.top - dr.top + st.dy }; });
+      st.ids.forEach(function(id, i){ var it = d.items[id]; if(!it) return; var p0 = DPOS[id], c = tgt.c, r = tgt.r;
+        if(from === '' && a0 && p0){ c = tgt.c + (p0.c - a0.c); r = tgt.r + (p0.r - a0.r); }
+        else if(i){ var q = g.nth(g.idx(tgt.c, tgt.r) + i); c = q.c; r = q.r; }
+        var p = (c >= 0 && r >= 0 && c < g.cols && r < g.rows && !taken[c+','+r]) ? { c:c, r:r } : dnear(g, c, r, taken);
+        taken[p.c+','+p.r] = 1; it.c = p.c; it.r = p.r; if(from !== ''){ it.in = ''; delete it.from; delete it.fc; delete it.fr; delete it.t2; if(!dnameFree(it.name, '', id)) it.name = dnameNew(it.name, ''); } });
+      if(from !== '' && !dview('icons')){ delete d.view.icons; }
+      deskSave(); gh.remove(); unhide(); drender();
+      dselClear(); DFOCUS = DLAYER;
+      st.ids.forEach(function(id, i){ var el = $('.dicon[data-id="'+id+'"]', DLAYER); if(!el) return; el.classList.add('sel'); if(!starts[i]) return;
+        var L = el.style.left, T = el.style.top; el.classList.add('settle'); el.style.left = starts[i].x+'px'; el.style.top = starts[i].y+'px'; void el.offsetWidth; el.classList.remove('settle'); el.style.left = L; el.style.top = T; });   /* glide from where it was let go into its cell */
+      return;
+    }
+    snapBack();
+    function snapBack(){ gh.classList.add('back'); gh.style.transform = 'translate(0,0)'; setTimeout(function(){ gh.remove(); unhide(); }, 240); }
+  }
+  /* rubber band: drag across the empty desktop to select icons */
+  desk.addEventListener('pointerdown', function(e){
+    if(e.button !== 0 || e.pointerType === 'touch' || !e.target.closest || e.target.closest('.win, .dicon, a, button, input')) return;
+    DFOCUS = DLAYER;
+    var add = e.shiftKey || e.metaKey; if(!add) dselClear();
+    var dr = desk.getBoundingClientRect(), x0 = e.clientX - dr.left, y0 = e.clientY - dr.top, band = null, base = add ? dselIds(DLAYER) : [];
+    var mv = function(ev){
+      var x = ev.clientX - dr.left, y = ev.clientY - dr.top;
+      if(!band){ if(Math.abs(x - x0) + Math.abs(y - y0) < 5) return; band = document.createElement('div'); band.className = 'dband'; desk.appendChild(band); }
+      var L = Math.min(x, x0), T = Math.min(y, y0), R = Math.max(x, x0), B = Math.max(y, y0);
+      band.style.left = L+'px'; band.style.top = T+'px'; band.style.width = (R - L)+'px'; band.style.height = (B - T)+'px';
+      if(!dview('icons')) return;
+      $$('.dicon', DLAYER).forEach(function(el){ var r = el.getBoundingClientRect(), a = $('.dart', el).getBoundingClientRect(), hit = r.left - dr.left < R && r.right - dr.left > L && a.top - dr.top < B && r.bottom - dr.top > T; el.classList.toggle('sel', hit || base.indexOf(el.getAttribute('data-id')) > -1); });
+    };
+    var up = function(){ document.removeEventListener('pointermove', mv, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('pointercancel', up, true); if(band){ band.remove(); CTX.swallow = true; } };
+    document.addEventListener('pointermove', mv, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true);
+  });
+  /* keys for a selection on the desktop or in a folder: Return renames, Cmd+Down opens, Cmd+Delete moves to the Trash, Cmd+A selects all */
+  document.addEventListener('keydown', function(e){
+    if(!DFOCUS || CTX.stack.length || DREN || $('.dlg-bg') || (e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]'))) return;
+    if(!root.contains(DFOCUS) || (DFOCUS !== DLAYER && !DFOCUS.isConnected)){ DFOCUS = null; return; }
+    var ids = dselIds(DFOCUS), meta = e.metaKey || e.ctrlKey, inTrash = DFOCUS.classList && DFOCUS.classList.contains('trashw');
+    if(meta && (e.key === 'a' || e.key === 'A') && (DFOCUS === DLAYER ? dview('icons') : true)){ e.preventDefault(); $$('.dicon', DFOCUS).forEach(function(el){ el.classList.add('sel'); }); return; }
+    if(meta && !e.shiftKey && (e.key === 'i' || e.key === 'I')){ e.preventDefault(); var ff = DFOCUS.getAttribute && DFOCUS.getAttribute('data-folder'); infoShow(ids.length ? { type:'item', id:ids[0] } : ff === 'trash' ? { type:'trash' } : ff ? { type:'item', id:ff } : { type:'desk' }); return; }
+    if(!ids.length) return;
+    if(e.key === 'Enter' && !meta && ids.length === 1 && !inTrash){ e.preventDefault(); e.stopPropagation(); drename(ids[0]); return; }
+    if(meta && e.key === 'ArrowDown'){ e.preventDefault(); ids.forEach(function(id){ var el = $('.dicon[data-id="'+id+'"]', DFOCUS); dopen(id, el); }); return; }
+    if(meta && e.key === 'Backspace' && !inTrash){ e.preventDefault(); dtrash(ids); return; }
+  });
+  drender();
+/* tigOS core app.js, part 27: dock editing. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
+  /* ---------------- the Dock: keep, remove, rearrange ----------------
+     Laid out like macOS: the kept (pinned) apps, then any app that is running without being kept (behind its own separator, the way
+     recent apps sit), then a separator, the LinkedIn link and the Trash. The kept list is saved per user beside the desktop (DK().dock in
+     27-desktop.js; absent means the default). Drag an icon along the dock to move it, drag it up and away to remove it (it goes in a puff
+     of smoke), drop an app from the desktop to keep it. Right-click options live in 27-menus.js. */
+  function dockDefault(){ var l = DOCK_ORDER.slice(); if(USER.name !== 'chase') l.splice(l.indexOf('terminal'), 0, 'games', 'pets'); return l; }   /* GreggyD and Ariel keep the Arcade and Pets beside the portfolio apps */
+  function dockList(){
+    var d = DK(), l = Array.isArray(d.dock) ? d.dock : dockDefault(), seen = {};
+    return l.filter(function(id){ if(seen[id] || !APPS[id] || APPS[id].sys) return false; seen[id] = 1; return true; });
+  }
+  function dockSave(list){ var d = DK(); if(list.join() === dockDefault().join()) delete d.dock; else d.dock = list.slice(); deskSave(); }
+  function dockHas(app){ return dockList().indexOf(app) > -1; }
+  function dockIcon(id, cls){
+    var b = document.createElement('button'); b.className = 'dk '+cls; b.type = 'button';
+    b.setAttribute('data-open', id); b.setAttribute('data-dock', id); b.setAttribute('aria-label', APPS[id].title);
+    b.innerHTML = tileHTML(id)+'<span class="dot"></span><span class="tip">'+esc(APPS[id].title)+'</span>';
+    return b;
+  }
+  /* bring #dock in line with the saved list. Icons that stay are only moved when out of place, so a bounce or a running dot survives */
+  function dockBuild(){
+    var dock = $('#dock'); if(!dock) return;
+    var list = dockList(), have = {}, want = [];
+    $$('.dk.pin', dock).forEach(function(b){ have[b.getAttribute('data-dock')] = b; });
+    list.forEach(function(id){ var b = have[id]; delete have[id]; if(!b) b = dockIcon(id, 'pin'); b.classList.toggle('xtra', !!APPS[id].hidden); want.push(b); });
+    Object.keys(have).forEach(function(k){ have[k].remove(); });
+    $$('.dk.tmp', dock).forEach(function(b){ if(list.indexOf(b.getAttribute('data-dock')) > -1) b.remove(); });
+    var tsep = $('.sep.tmpsep', dock), order = want.concat(tsep ? [tsep] : [], $$('.dk.tmp', dock), [$('.sep.main', dock), $('a.dk', dock), $('.dk.trash', dock)]).filter(Boolean);
+    order.forEach(function(n, i){ if(dock.children[i] !== n) dock.insertBefore(n, dock.children[i] || null); });
+    updateChrome();
+    trashLook();
+    if(USER.name === 'ariel') heartsOn();
+  }
+  function dockBounce(app){ var b = $('#dock .dk[data-dock="'+app+'"]'); if(!b) return; b.classList.remove('bounce'); void b.offsetWidth; b.classList.add('bounce'); }
+  function dockPop(app){ var b = $('#dock .dk.pin[data-dock="'+app+'"]'); if(!b) return; b.classList.remove('dk-in'); void b.offsetWidth; b.classList.add('dk-in'); setTimeout(function(){ b.classList.remove('dk-in'); }, 520); }
+  /* Keep in Dock: at the end of the kept apps, or at a slot (a drop) */
+  function dockPin(app, quiet, at){
+    if(!APPS[app] || APPS[app].sys) return false;
+    var l = dockList(); if(l.indexOf(app) > -1){ dockBounce(app); return false; }
+    if(!(at >= 0 && at <= l.length)) at = l.length;
+    l.splice(at, 0, app); dockSave(l); dockBuild(); dockPop(app);
+    if(!quiet) toast(APPS[app].title+' is in the Dock', isMobile() ? 'Hold it there for options.' : 'Drag it to move it, or right-click it for options.');
+    return true;
+  }
+  /* Remove from Dock: a running app steps over to the running section and stays open; the last app always stays */
+  function dockUnpin(app, quiet){
+    var l = dockList(), i = l.indexOf(app); if(i < 0) return false;
+    if(l.length < 2){ toast('The Dock needs at least one app', 'Keep another app in the Dock first.'); dockBounce(app); return false; }
+    l.splice(i, 1); dockSave(l);
+    var b = $('#dock .dk.pin[data-dock="'+app+'"]');
+    if(b && !WM.wins[app] && !quiet && PREF.motion !== 'off'){ b.classList.add('dk-out'); setTimeout(dockBuild, 230); } else dockBuild();
+    return true;
+  }
+  function dockReset(){
+    delete DK().dock; deskSave();
+    PREF.dock = 'md'; PREF.dockpos = 'bottom'; PREF.dockhide = 'off'; PREF.dockmag = 'on'; applyPrefs(); petUIs();
+    dockBuild(); toast('Dock reset', 'The default apps, size and position are back.');
+  }
+  function dockResetAsk(){ sheet('Reset the Dock?', 'The default apps come back in their usual order, at the usual size and position. Your desktop stays as it is.', 'Reset Dock', dockReset); }
+  /* Open at Login: opened, a beat apart, once the desktop is up after a boot or a log in */
+  function loginHas(app){ return DK().login.indexOf(app) > -1; }
+  function loginToggle(app){ var l = DK().login, i = l.indexOf(app); if(i > -1) l.splice(i, 1); else l.push(app); deskSave(); return i < 0; }
+  function loginItems(){
+    var l = DK().login.filter(function(id){ return APPS[id] && !APPS[id].sys; }); if(!l.length) return;
+    if(isMobile()) l = l.slice(-1);   /* a phone shows one app at a time: the last one wins anyway */
+    l.forEach(function(id, i){ setTimeout(function(){ if(loginEl.hidden && !root.classList.contains('booting') && !root.classList.contains('poweroff') && !WM.wins[id]) open(id, { from:$('#dock [data-dock="'+id+'"]') }); }, 700 + i*320); });
+  }
+  /* ---------- dragging ---------- */
+  function dockAxis(){ var s = dockSide(); return s === 'left' || s === 'right' ? 'y' : 'x'; }
+  /* close enough to count as on the dock: a little slack along it, more on the side facing the desktop */
+  function dockNear(x, y){
+    var d = $('#dock').getBoundingClientRect(), s = dockSide(), M = 26, F = 70;
+    if(s === 'left') return y > d.top - M && y < d.bottom + M && x > d.left - M && x < d.right + F;
+    if(s === 'right') return y > d.top - M && y < d.bottom + M && x > d.left - F && x < d.right + M;
+    return x > d.left - M && x < d.right + M && y > d.top - F && y < d.bottom + M;
+  }
+  /* layout positions (offsets, so a hover magnification or a slide in flight never skews them) */
+  function dockPos(el){ var dock = $('#dock'), d = dock.getBoundingClientRect(); return { x:d.left + dock.clientLeft + el.offsetLeft, y:d.top + dock.clientTop + el.offsetTop, w:el.offsetWidth, h:el.offsetHeight }; }
+  /* slide the other icons from where they were to where a change puts them */
+  function dockFlip(mutate){
+    var kids = $$('#dock > .dk, #dock > .sep').filter(function(k){ return k.offsetWidth; }), r0 = kids.map(dockPos);
+    mutate();
+    if(PREF.motion === 'off') return;
+    kids.forEach(function(k, i){ if(!k.isConnected || !k.offsetWidth) return; var r1 = dockPos(k), dx = r0[i].x - r1.x, dy = r0[i].y - r1.y; if(Math.abs(dx) < .5 && Math.abs(dy) < .5) return;
+      k.style.transition = 'none'; k.style.translate = dx+'px '+dy+'px'; void k.offsetWidth;
+      k.style.transition = 'transform .22s var(--spring), translate .24s var(--ease)'; k.style.translate = '';
+      clearTimeout(k._flipT); k._flipT = setTimeout(function(){ k.style.transition = ''; }, 300); });
+  }
+  /* the slot a point falls in: how many kept icons have their centre before it */
+  function dockSlot(x, y, skip){
+    var ax = dockAxis(), pins = $$('#dock > .dk.pin').filter(function(b){ return b !== skip && b.offsetWidth; }), n = 0;
+    pins.forEach(function(b){ var p = dockPos(b), c = ax === 'x' ? p.x + p.w/2 : p.y + p.h/2; if((ax === 'x' ? x : y) > c) n++; });
+    return { n:n, pins:pins };
+  }
+  /* an empty slot that opens where a dragged icon would land */
+  var DGAP = null;
+  function dockGapMake(ref){   /* as big as one icon's slot, whatever the dock size */
+    if(!DGAP){ DGAP = document.createElement('span'); DGAP.className = 'dk-gap'; DGAP.setAttribute('aria-hidden', 'true'); }
+    ref = ref && ref.offsetWidth ? ref : $$('#dock > .dk').filter(function(b){ return b.offsetWidth; })[0];
+    if(ref){ DGAP.style.width = ref.offsetWidth+'px'; DGAP.style.height = ref.offsetHeight+'px'; }
+    return DGAP;
+  }
+  function dockGapAt(x, y, skip){
+    var dock = $('#dock'), s = dockSlot(x, y, skip), before = s.pins[s.n] || $('.sep.tmpsep', dock) || $('.sep.main', dock), ts = $('.sep.tmpsep', dock);
+    if(skip && !skip.classList.contains('pin') && ts){   /* a running app dragged along its own section stays unkept; only crossing into the kept apps keeps it */
+      var tp = dockPos(ts), ax = dockAxis();
+      if((ax === 'x' ? x : y) > (ax === 'x' ? tp.x + tp.w/2 : tp.y + tp.h/2)){ s.n = -1; before = skip; }
+    }
+    if(!DGAP || !DGAP.isConnected) dockGapMake();
+    if(DGAP.isConnected && (DGAP.nextElementSibling === before || (before === skip && DGAP.nextElementSibling === skip))) return s.n;
+    dockFlip(function(){ dock.insertBefore(DGAP, before); });
+    return s.n;
+  }
+  function dockGapIndex(){ if(!DGAP || !DGAP.isConnected) return -1; var n = 0; for(var k = DGAP.previousElementSibling; k; k = k.previousElementSibling) if(k.classList.contains('pin') && !k.classList.contains('dk-away')) n++; return n; }
+  function dockGapClear(instant){ if(!DGAP || !DGAP.isConnected) return; if(instant) DGAP.remove(); else dockFlip(function(){ DGAP.remove(); }); }
+  function dockPuff(x, y){
+    if(PREF.motion === 'off') return;
+    var rr = root.getBoundingClientRect(), p = document.createElement('div'); p.className = 'dk-puff'; p.style.left = (x - rr.left)+'px'; p.style.top = (y - rr.top)+'px';
+    p.innerHTML = '<i style="--tx:-16px;--ty:-12px"></i><i style="--tx:15px;--ty:-14px"></i><i style="--tx:-12px;--ty:13px"></i><i style="--tx:14px;--ty:12px"></i><i style="--tx:0px;--ty:-20px"></i><i style="--tx:0px;--ty:0px"></i>';
+    root.appendChild(p); setTimeout(function(){ p.remove(); }, 650);
+  }
+  function ddStart(b, x, y){
+    var rr = root.getBoundingClientRect(), t = $('.tile', b), tr = t.getBoundingClientRect(), gh = document.createElement('div');
+    gh.className = 'dkghost'; gh.innerHTML = t.outerHTML+'<span class="dkg-tip">Remove</span>';
+    gh.style.left = (tr.left - rr.left)+'px'; gh.style.top = (tr.top - rr.top)+'px'; gh.style.width = tr.width+'px'; gh.style.height = tr.height+'px';
+    root.appendChild(gh);
+    dockGapMake(b); b.parentNode.insertBefore(DGAP, b); b.classList.add('dk-away');
+    root.classList.add('dk-dragging');
+    return { b:b, id:b.getAttribute('data-dock'), pinned:b.classList.contains('pin'), gh:gh, x0:x, y0:y, cx:tr.left + tr.width/2, cy:tr.top + tr.height/2, out:false };
+  }
+  function ddMove(st, e){
+    st.gh.style.transform = 'translate('+(e.clientX - st.x0)+'px,'+(e.clientY - st.y0)+'px)';
+    var near = dockNear(e.clientX, e.clientY);
+    st.slot = near ? dockGapAt(e.clientX, e.clientY, st.b) : -1; if(!near) dockGapClear();
+    st.out = !near;
+    st.gh.classList.toggle('rm', !near && st.pinned && dockList().length > 1);
+  }
+  function ddEnd(st, e){
+    root.classList.remove('dk-dragging'); CTX.swallow = true;
+    var dock = $('#dock'), gh = st.gh, b = st.b;
+    var land = function(el, then){   /* the ghost glides into its slot, then the real icon takes its place */
+      var p = dockPos(el), tx = p.x + p.w/2 - st.cx, ty = p.y + p.h/2 - st.cy;
+      if(PREF.motion === 'off'){ gh.remove(); then(); return; }
+      gh.classList.add('land'); gh.style.transform = 'translate('+tx+'px,'+ty+'px)';
+      setTimeout(function(){ gh.remove(); then(); }, 190);
+    };
+    if(DGAP && DGAP.isConnected){
+      var at = dockGapIndex(), list = dockList().filter(function(id){ return id !== st.id; }), was = dockList().join();
+      if(st.pinned || st.slot > -1){ list.splice(Math.max(0, at), 0, st.id); }
+      land(DGAP, function(){
+        b.classList.remove('dk-away'); DGAP.remove();
+        if(list.join() !== was){ dockSave(list); dockBuild(); if(!st.pinned) dockPop(st.id); }
+      });
+      return;
+    }
+    if(st.pinned && dockList().length > 1){
+      var r = gh.getBoundingClientRect();
+      dockPuff(r.left + r.width/2, r.top + r.height/2);
+      gh.classList.add('poof'); setTimeout(function(){ gh.remove(); }, 260);
+      dockUnpin(st.id, true);
+      if(!WM.wins[st.id]) toast(APPS[st.id].title+' removed from the Dock', 'Find it again with \u2318K, or right-click the Dock to reset it.');
+      return;
+    }
+    /* nowhere to go (a running app dropped off the dock, or the last app): put it back where it was */
+    dockFlip(function(){ if(!DGAP.isConnected) dock.insertBefore(DGAP, b); });
+    land(DGAP, function(){ b.classList.remove('dk-away'); DGAP.remove(); });
+    if(st.pinned) toast('The Dock needs at least one app', 'Keep another app in the Dock first.');
+  }
+  $('#dock').addEventListener('pointerdown', function(e){
+    if(e.button !== 0 || e.ctrlKey || e.pointerType === 'touch' || isMobile() || CTX.stack.length) return;
+    var b = e.target.closest('.dk'); if(!b || b.tagName === 'A' || b.classList.contains('trash') || !b.hasAttribute('data-dock') || b.classList.contains('gone')) return;
+    if(APPS[b.getAttribute('data-dock')] && APPS[b.getAttribute('data-dock')].sys) return;   /* folder, Info and Trash windows are not apps to keep */
+    var sx = e.clientX, sy = e.clientY, st = null;
+    var mv = function(ev){ if(!st){ if(Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 7) return; st = ddStart(b, sx, sy); } ev.preventDefault(); ddMove(st, ev); };
+    var up = function(ev){ document.removeEventListener('pointermove', mv, true); document.removeEventListener('pointerup', up, true); document.removeEventListener('pointercancel', up, true); if(st) ddEnd(st, ev); };
+    document.addEventListener('pointermove', mv, true); document.addEventListener('pointerup', up, true); document.addEventListener('pointercancel', up, true);
+  });
+  $('#dock').addEventListener('dragstart', function(e){ if(e.target.closest && e.target.closest('.dk')) e.preventDefault(); });   /* the LinkedIn link would start the browser's own link drag */
+  dockBuild();
 /* tigOS core app.js, part 27: eggs. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- easter eggs: the Konami code throws a party (wallpaper cycles hue, the dock and pets dance, confetti, a jingle if the
      arcade synth is loaded), `do a barrel roll` rolls the whole desktop once, `sl` runs the classic locomotive across the terminal.
@@ -2305,6 +3182,293 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     'do': function(a, T){ if(/barrel\s*roll/i.test(a || '')){ barrelRoll(); T.print('whee.', 'ok'); } else T.print('do what? try: '+T.o('do a barrel roll')); },
     sl: function(a, T){ T.art(TRAIN, 'train'); },
     konami: function(a, T){ T.print('up up down down left right left right b a. anywhere on the desktop.'); }
+  };
+/* tigOS core app.js, part 27: menus. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
+  /* ---------------- what each right-click offers ----------------
+     One builder per kind of target (27-ctx-menu.js ctxTarget names them). Each returns { items, anchor, src } for ctxShow: items read
+     top to bottom like the macOS menu they are modelled on (Finder's desktop and icon menus, the Dock's app, Trash and divider menus, a
+     window's Window menu), plus a few tigOS extras: quick actions for an app (download the resume, jump to a case study), the pet. */
+  var CTX_MENUS = {};
+  var CAP = function(s){ return s.charAt(0).toUpperCase()+s.slice(1); };
+  function deskXY(x, y){ var dr = desk.getBoundingClientRect(), rr = root.getBoundingClientRect(); return { x:x - (dr.left - rr.left), y:y - (dr.top - rr.top) }; }
+  function copyText(v){
+    var done = function(ok){ toast(ok ? 'Copied to clipboard' : 'Copy this', v); };
+    var old = function(){ var t = document.createElement('textarea'), ok = false; t.value = v; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0'; root.appendChild(t); t.select(); try { ok = document.execCommand('copy'); } catch(e){} t.remove(); done(ok); };
+    try { if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(function(){ done(true); }, old); else old(); } catch(e){ old(); }
+  }
+  function dlResume(){ if(!A.resume_pdf) return; var a = document.createElement('a'); a.href = A.resume_pdf; a.download = 'Chase-Johnston-Resume.pdf'; a.rel = 'noopener'; root.appendChild(a); a.click(); a.remove(); toast('Downloading the resume', 'Chase-Johnston-Resume.pdf'); }
+  function newTab(url){ try { window.open(url, '_blank', 'noopener'); } catch(e){} }
+  /* type a command into the Terminal, the way a person would */
+  function termRun(cmd){
+    open('terminal');
+    setTimeout(function(){ var i = $('#termIn'); if(!i) return; i.value = cmd; i.dispatchEvent(new KeyboardEvent('keydown', { key:'Enter', bubbles:true })); try { i.focus({ preventScroll:true }); } catch(e){} }, 80);
+  }
+  function saverGo(kind){ sleepEl.hidden = false; tick(); saverStart(kind); }
+  function seg3(cur, set, opts){ return opts.map(function(o){ return { t:o[1], on:cur === o[0], fn:function(){ set(o[0]); } }; }); }
+  /* ---------- desktop items: the actions behind the menus ---------- */
+  function ddelete(ids){
+    var d = DK(), n = 0;
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; Object.keys(d.items).forEach(function(k){ if(d.items[k].in === id) delete d.items[k]; }); var fw = WM.wins['fold-'+id]; if(fw) close(fw); delete d.items[id]; n++; });
+    if(n){ deskSave(); drender(); }
+    return n;
+  }
+  function dduplicate(ids){
+    var last = null;
+    ids.forEach(function(id){ var it = ditem(id); if(!it || it.in === 'trash') return; var where = dinside(it);
+      var n = dnew(it.kind, { app:it.app, name:dnameNew(it.name+' copy', where), in:where, tag:it.tag });
+      if(it.kind === 'folder') dkids(id).forEach(function(k){ dnew('app', { app:k.app, name:k.name, in:n.id, tag:k.tag, t:k.t }); });
+      last = n; });
+    if(!last) return; deskSave(); drender(); if(!last.in) dflash(last.id);
+  }
+  /* Clean Up: pack the icons into the grid from the top right, keeping their order (or sorting them once, Clean Up By) */
+  function dcleanUp(by){
+    var g = dgrid(), its = ditems('');
+    if(by) its.sort(dcmp(by)); else its.sort(function(a, b){ var pa = DPOS[a.id], pb = DPOS[b.id]; return (pa ? g.idx(pa.c, pa.r) : 1e6) - (pb ? g.idx(pb.c, pb.r) : 1e6) || a.t - b.t; });
+    its.forEach(function(it, i){ var p = g.nth(i); it.c = p.c; it.r = p.r; });
+    deskSave(); drender();
+  }
+  function dshow(){ if(!dview('icons')) dviewSet('icons', true); }
+  function dmoveTo(ids, where){
+    var n = dmove(ids, where); if(!n) return;
+    if(where === ''){ dshow(); ids.forEach(function(id, i){ var el = $('.dicon[data-id="'+id+'"]', DLAYER); if(el){ if(!i) dselOnly(el); else el.classList.add('sel'); } }); }
+    else { var f = $('.dicon[data-id="'+where+'"]', DLAYER); if(f){ f.classList.remove('flash'); void f.offsetWidth; f.classList.add('flash'); } }
+  }
+  function moveSub(ids, here){
+    var its = ids.map(ditem).filter(Boolean), out = [];
+    if(here !== '') out.push({ t:'Desktop', i:'wall', fn:function(){ dmoveTo(ids, ''); } });
+    if(!its.some(function(x){ return x.kind === 'folder'; })){
+      var fs = ditems('').filter(function(x){ return x.kind === 'folder' && x.id !== here && ids.indexOf(x.id) < 0; }).sort(dcmp('name'));
+      if(fs.length && out.length) out.push('-');
+      fs.forEach(function(f){ out.push({ t:f.name, i:'folder', fn:function(){ dmoveTo(ids, f.id); } }); });
+    }
+    return out;
+  }
+  /* ---------- windows: macOS 15's Move & Resize ---------- */
+  function wtile(w, how){
+    var el = w.el; if(!el || isMobile() || el.classList.contains('fs')) return;
+    var a = area(), W = a.x1 - a.x0, H = a.y1, g = 6, r = null;
+    if(how === 'prev'){ if(!w.tilePrev) return; var z = el.style.zIndex; el.classList.add('zooming'); el.style.cssText = w.tilePrev; el.style.zIndex = z; w.tilePrev = null; }
+    else {
+      if(!w.tilePrev) w.tilePrev = w.max ? w.prev : el.style.cssText;
+      if(w.max){ w.max = false; el.classList.remove('max'); }
+      var half = Math.round(W/2);
+      if(how === 'left') r = [a.x0 + g, g, half - g*1.5, H - g*2];
+      if(how === 'right') r = [a.x0 + half + g/2, g, W - half - g*1.5, H - g*2];
+      if(how === 'top') r = [a.x0 + g, g, W - g*2, Math.round(H/2) - g*1.5];
+      if(how === 'bottom') r = [a.x0 + g, Math.round(H/2) + g/2, W - g*2, H - Math.round(H/2) - g*1.5];
+      if(how === 'fill') r = [a.x0 + g, g, W - g*2, H - g*2];
+      if(how === 'center'){ var cw = Math.min(el.offsetWidth, W - 2*g), ch = Math.min(el.offsetHeight, H - 2*g); r = [a.x0 + Math.round((W - cw)/2), Math.max(g, Math.round((H - ch)/2)), cw, ch]; }
+      if(!r) return;
+      el.classList.add('zooming');
+      el.style.left = Math.round(r[0])+'px'; el.style.top = Math.round(r[1])+'px'; el.style.width = Math.round(r[2])+'px'; el.style.height = Math.round(r[3])+'px';
+    }
+    clearTimeout(w.zoomT); w.zoomT = setTimeout(function(){ el.classList.remove('zooming'); }, 500);
+    focus(w);
+  }
+  /* ---------- the pet ---------- */
+  function petDo(cls, ms){
+    var el = PET.el; if(!el || el.classList.contains('abduct') || el.classList.contains('poof')) return false;
+    var left = getComputedStyle(el).left; clearTimeout(PET.t); petClear(el); el.style.left = left; PET.busy = false; PET.mood = '';   /* stop a walk where it is */
+    return petMood(cls, ms);
+  }
+  function petSub(){
+    var cur = PREF.pet && PETS[PREF.pet] ? PREF.pet : '';
+    return [{ t:'None', on:!cur, fn:function(){ var el = petEl(); if(el) petGoodbye(el); } }, '-'].concat(Object.keys(PETS).map(function(k){
+      return { t:PETS[k].name+' the '+PETS[k].label, on:k === cur, fn:function(){ if(k === PREF.pet) return; petSet(k); toast(PETS[k].name+' is out', isMobile() ? 'Bottom right. Drag them wherever you like.' : 'Bottom right. Drag them anywhere, or right-click them.'); } };
+    })).concat(['-', { t:'Open Pets\u2026', fn:function(){ open('pets'); } }]);
+  }
+  function wallSub(){
+    var own = USER.name === 'chase';
+    return [{ h:'Wallpaper' }].concat(seg3(PREF.wall === 'still' ? 'still' : 'live', function(v){ setPref('wall', v); }, [['live', 'Live'], ['still', 'Still']]),
+      [{ h:'Appearance' }], seg3(PREF.theme === 'light' ? 'light' : 'dark', function(v){ setPref('theme', v); }, [['dark', 'Dark'], ['light', 'Light']]),
+      own ? [{ h:'Accent Color' }].concat(Object.keys(ACCENTS).map(function(k){ return { t:CAP(k), dot:ACCENTS[k], on:PREF.accent === k, fn:function(){ setPref('accent', k); } }; })) : [],
+      ['-', { t:'Wallpaper Settings\u2026', fn:function(){ open('settings'); } }]);
+  }
+  /* quick actions an app offers wherever it is right-clicked: its dock icon, a desktop alias, its window */
+  function appActions(app){
+    var C = TIG.contact, out = [];
+    if(app === 'resume' && A.resume_pdf) out.push({ t:'Download PDF', i:'download', fn:dlResume }, { t:'Open PDF in New Tab', i:'open', fn:function(){ newTab(A.resume_pdf); } });
+    if(app === 'contact') out.push({ t:'Copy Email Address', i:'copy', fn:function(){ copyText(C.email); } }, { t:'Copy LinkedIn Link', i:'linkedin', fn:function(){ copyText(C.linkedin); } });
+    if(app === 'projects' && TIG.projects && TIG.projects.length) out.push({ t:'Case Studies', i:'projects', sub:function(){ return TIG.projects.map(function(p){ return { t:p.name, note:p.company, fn:function(){ open('projects', { route:p.id }); } }; }); } });
+    if(app === 'journey' && TIG.journey && TIG.journey.length) out.push({ t:'Stops', i:'journey', sub:function(){ return TIG.journey.map(function(s){ var c = TIG.cities && TIG.cities[s.city]; return { t:s.company.split(/\s*[&,(]/)[0]+(c ? ', '+c.city : ''), note:(String(s.years).match(/\d{4}/) || [''])[0], fn:function(){ open('journey', { route:s.id }); } }; }); } });
+    if(app === 'terminal') out.push({ t:'Run', i:'terminal', sub:function(){ return [['help', 'Every command'], ['neofetch', 'System info'], ['whoami', ''], ['weather', ''], ['fortune', '']].map(function(c){ return { t:c[0], note:c[1], fn:function(){ termRun(c[0]); } }; }); } });
+    if(app === 'games' && GAMES.length) out.push({ t:'Play', i:'gamepad', sub:function(){ return GAMES.map(function(g){ return { t:g.name, fn:function(){ open('games', { route:g.id }); } }; }); } });
+    if(app === 'pets' && Object.keys(PETS).length) out.push({ t:'Desktop Pet', i:'paw', sub:petSub });
+    if(app === 'settings') out.push({ t:'Appearance', i:'sun', sub:function(){ return seg3(PREF.theme === 'light' ? 'light' : 'dark', function(v){ setPref('theme', v); }, [['dark', 'Dark'], ['light', 'Light']]); } });
+    return out;
+  }
+  /* ---------- the desktop ---------- */
+  CTX_MENUS.desk = function(tg, x, y){
+    var mob = isMobile(), icons = dview('icons'), hero = dview('hero'), sort = dview('sort'), size = dsize(), n = ditems('').length, at = deskXY(x, y);
+    dselClear(); DFOCUS = DLAYER;
+    var sortBy = function(v){ dviewSet('sort', v); }, hideTip = mob ? 'Hold the desktop to show them again.' : 'Right-click the desktop to show them again.';
+    return { items:[
+      { t:'New Folder', i:'folder-plus', fn:function(){ dnewFolder(mob ? null : at); } },
+      '-',
+      { t:'Get Info', i:'info', k:mob ? '' : '\u2318I', fn:function(){ infoShow({ type:'desk' }); } },
+      '-',
+      { t:'Change Wallpaper', i:'wall', sub:wallSub },
+      Object.keys(PETS).length && { t:'Desktop Pet', i:'paw', sub:petSub },
+      '-',
+      { t:'Sort By', i:'sort', sub:function(){ return [{ t:'None', on:sort === 'grid', fn:function(){ sortBy('grid'); } }, '-'].concat(seg3(sort, sortBy, [['name', 'Name'], ['kind', 'Kind'], ['date', 'Date Added']])); } },
+      { t:'Clean Up', i:'grid', dis:sort !== 'grid' || !n || !icons, fn:function(){ dcleanUp(); } },
+      { t:'Clean Up By', dis:sort !== 'grid' || !n || !icons, sub:function(){ return [['name', 'Name'], ['kind', 'Kind'], ['date', 'Date Added']].map(function(o){ return { t:o[1], fn:function(){ dcleanUp(o[0]); } }; }); } },
+      { t:'Icon Size', i:'expand', sub:function(){ return seg3(size, function(v){ dviewSet('size', v); }, [['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large']]); } },
+      '-',
+      icons ? { t:'Hide Desktop Icons', i:'eye-off', fn:function(){ dselClear(); dviewSet('icons', false); toast('Desktop icons hidden', (hero ? 'The welcome text steps aside too. ' : '')+hideTip); } }
+            : { t:'Show Desktop Icons', i:'eye', fn:function(){ dviewSet('icons', true); } },
+      icons && (hero ? { t:'Hide Welcome Text', i:'eye-off', fn:function(){ dviewSet('hero', false); toast('Welcome text hidden', hideTip); } }
+                     : { t:'Show Welcome Text', i:'eye', fn:function(){ dviewSet('hero', true); } }),
+      '-',
+      { t:'Add to Desktop', i:'plus', sub:function(){ return VIS().map(function(app){ return { t:APPS[app].title, i:APPS[app].icon, on:!!dalias(app), fn:function(){ daddApp(app); } }; }); } },
+      mob && dtrashed().length && { t:'Open Trash', i:'trash', fn:function(){ open('trash'); } },
+      '-',
+      { t:'Start Screen Saver', i:'moon', sub:function(){ return Object.keys(SAVERS).map(function(k){ return { t:SAVERS[k].name, note:k === PREF.saver ? 'Default' : '', fn:function(){ saverGo(k); } }; }).concat(['-', { t:'Random', fn:function(){ saverGo('random'); } }]); } },
+      { t:'Settings\u2026', i:'gear', fn:function(){ open('settings'); } }
+    ] };
+  };
+  /* ---------- an icon on the desktop or in a folder or the Trash ---------- */
+  CTX_MENUS.icon = function(tg){
+    var el = tg.el, id = el.getAttribute('data-id'), it = ditem(id); if(!it) return null;
+    var host = dhost(el), mob = isMobile(), here = host === DLAYER ? '' : host.getAttribute('data-folder');
+    if(!el.classList.contains('sel')) dselOnly(el); else DFOCUS = host;   /* macOS: right-clicking an unselected icon selects it alone; a selected one keeps the selection */
+    var ids = dselIds(host); if(ids.indexOf(id) < 0) ids = [id];
+    var its = ids.map(ditem).filter(Boolean), many = its.length > 1, loose = its.filter(function(x){ return x.kind !== 'folder'; }), name = many ? its.length+' Items' : '\u201c'+it.name+'\u201d';
+    if(here === 'trash' || it.in === 'trash') return { items:[
+      { t:'Put Back', i:'back', fn:function(){ dputBack(ids); } },
+      { t:'Delete Immediately\u2026', i:'close', fn:function(){ sheet('Are you sure you want to delete '+name+' immediately?', 'You can\u2019t undo this action.', 'Delete', function(){ ddelete(ids); }); } },
+      '-',
+      { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'item', id:id }); } },
+      '-',
+      { t:'Empty Trash\u2026', i:'trash', fn:demptyAsk }
+    ] };
+    var app = !many && it.kind === 'app' ? it.app : '', acts = app ? appActions(app) : [], moves = moveSub(ids, here), tagNow = its.every(function(x){ return x.tag === it.tag; }) ? it.tag : null;
+    return { items:[
+      { t:many ? 'Open '+its.length+' Items' : 'Open', i:it.kind === 'folder' ? 'folder' : 'open', k:mob ? '' : '\u2318\u2193', fn:function(){ (mob ? ids.slice(0, 1) : ids).forEach(function(i){ dopen(i, $('.dicon[data-id="'+i+'"]', host)); }); } },
+      acts.length && { t:'Quick Actions', i:'skills', sub:acts },
+      '-',
+      { t:'Move to Trash', i:'trash', k:mob ? '' : '\u2318\u232b', fn:function(){ dtrash(ids); } },
+      '-',
+      { t:'Get Info', i:'info', k:mob ? '' : '\u2318I', fn:function(){ infoShow({ type:'item', id:id }); } },
+      !many && { t:'Rename', i:'pencil', k:mob ? '' : '\u21a9', fn:function(){ drename(id); } },
+      { t:'Duplicate', i:'copy', fn:function(){ dduplicate(ids); } },
+      moves.length && { t:'Move To', i:'folder', sub:moves },
+      here === '' && many && loose.length && { t:'New Folder with Selection ('+loose.length+' Item'+(loose.length === 1 ? '' : 's')+')', i:'folder-plus', fn:function(){ var p = DPOS[id], g = dgrid(); dnewFolder(p ? { x:g.x(p.c) + g.cw/2, y:g.y(p.r) + g.s/2 } : null, loose.map(function(x){ return x.id; })); } },
+      '-',
+      { tags:tagNow === null ? '' : tagNow, fn:function(v){ dtag(ids, v); } },
+      { t:'Tags\u2026', i:'tag', fn:function(){ infoShow({ type:'item', id:id }); } },
+      app && '-',
+      app && (dockHas(app) ? { t:'Show in Dock', i:'dock', fn:function(){ dockBounce(app); } } : { t:'Add to Dock', i:'dock', fn:function(){ dockPin(app); } })
+    ] };
+  };
+  /* ---------- an open folder or Trash window, between its icons ---------- */
+  CTX_MENUS.fbg = function(tg){
+    var fw = tg.el, fid = fw.getAttribute('data-folder'), sel = function(){ $$('.dicon', fw).forEach(function(e){ e.classList.add('sel'); }); };
+    dselClear(); DFOCUS = fw;
+    if(fid === 'trash') return { items:[
+      { t:'Empty Trash\u2026', i:'trash', dis:!dtrashed().length, fn:demptyAsk },
+      '-',
+      { t:'Select All', k:isMobile() ? '' : '\u2318A', dis:!dtrashed().length, fn:sel },
+      '-',
+      { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'trash' }); } }
+    ] };
+    var it = ditem(fid); if(!it) return null;
+    return { items:[
+      { t:'Add to Folder', i:'plus', sub:function(){ return VIS().map(function(app){ var has = dkids(fid).some(function(k){ return k.app === app; }); return { t:APPS[app].title, i:APPS[app].icon, on:has, fn:function(){ if(has) return; dnew('app', { app:app, name:dnameNew(APPS[app].title, fid), in:fid }); deskSave(); drender(); } }; }); } },
+      { t:'Select All', k:isMobile() ? '' : '\u2318A', dis:!dkids(fid).length, fn:sel },
+      '-',
+      { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'item', id:fid }); } },
+      { t:'Show on Desktop', i:'wall', fn:function(){ dshow(); dflash(fid); } }
+    ] };
+  };
+  /* ---------- the Dock ---------- */
+  CTX_MENUS.dock = function(tg){
+    var b = tg.el, app = b.getAttribute('data-dock'), a = APPS[app]; if(!a) return null;
+    var w = WM.wins[app], pinned = b.classList.contains('pin'), top = topWin(true), sys = !!a.sys, items = [];
+    if(w){ items.push({ t:a.title, on:!w.min && top === w, note:w.min ? 'Minimized' : '', fn:function(){ if(w.min) restore(w); focus(w); } }, '-'); }
+    if(sys){
+      if(a.sys === 'folder') items.push({ t:'Show on Desktop', fn:function(){ dshow(); dflash(a.folder); } }, { t:'Get Info', fn:function(){ infoShow({ type:'item', id:a.folder }); } }, '-');
+      if(w) items.push(w.min ? { t:'Show', fn:function(){ restore(w); focus(w); } } : { t:'Hide', fn:function(){ minimize(w); } }, { t:'Close', fn:function(){ close(w); } });
+      return { items:items, anchor:b, src:b };
+    }
+    var acts = appActions(app); if(acts.length) items = items.concat(acts.map(function(x){ var y = {}; Object.keys(x).forEach(function(k){ if(k !== 'i') y[k] = x[k]; }); return y; }), '-');   /* dock menus carry no icons, as on a Mac */
+    items.push({ t:'Options', sub:function(){ return [
+      w ? { t:'Keep in Dock', on:pinned, fn:function(){ if(pinned) dockUnpin(app); else dockPin(app); } } : null,
+      { t:'Open at Login', on:loginHas(app), fn:function(){ var on = loginToggle(app); toast(on ? a.title+' will open at login' : a.title+' won\u2019t open at login', on ? 'Every time tigOS starts up on this device.' : ''); } },
+      { t:dalias(app) ? 'Show on Desktop' : 'Add to Desktop', fn:function(){ daddApp(app); } },
+      !w && pinned ? '-' : null,
+      !w && pinned ? { t:'Remove from Dock', fn:function(){ dockUnpin(app); } } : null
+    ]; } }, '-');
+    if(w) items.push(w.min ? { t:'Show', fn:function(){ restore(w); focus(w); } } : { t:'Hide', fn:function(){ minimize(w); } }, { t:'Quit', fn:function(){ close(w); } });
+    else items.push({ t:'Open', fn:function(){ open(app, { from:b }); } });
+    return { items:items, anchor:b, src:b };
+  };
+  CTX_MENUS.trash = function(tg){
+    var n = dtrashed().length;
+    return { items:[{ t:'Open', fn:function(){ open('trash', { from:tg.el }); } }, '-', { t:'Empty Trash', dis:!n, fn:demptyAsk }], anchor:tg.el, src:tg.el };
+  };
+  CTX_MENUS.link = function(tg){
+    var url = TIG.contact.linkedin;
+    return { items:[{ t:'Open LinkedIn', fn:function(){ newTab(url); } }, { t:'Copy Link', fn:function(){ copyText(url); } }, '-', { t:'Contact Chase', fn:function(){ open('contact', { from:tg.el }); } }], anchor:tg.el, src:tg.el };
+  };
+  /* the divider and the space between icons: the Dock's own settings */
+  CTX_MENUS.dockbg = function(){
+    var mob = isMobile(), gd = root.classList.contains('u-greggyd'), hide = PREF.dockhide === 'on', mag = PREF.dockmag !== 'off';
+    return { atDock:true, items:[
+      !mob && !gd && { t:hide ? 'Turn Hiding Off' : 'Turn Hiding On', fn:function(){ setPref('dockhide', hide ? 'off' : 'on'); } },
+      !mob && { t:mag ? 'Turn Magnification Off' : 'Turn Magnification On', fn:function(){ setPref('dockmag', mag ? 'off' : 'on'); } },
+      '-',
+      !mob && !gd && { t:'Position on Screen', sub:function(){ return seg3(PREF.dockpos, function(v){ setPref('dockpos', v); }, [['left', 'Left'], ['bottom', 'Bottom'], ['right', 'Right']]); } },
+      !mob && { t:'Size', sub:function(){ return seg3(PREF.dock, function(v){ setPref('dock', v); }, [['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large']]); } },
+      '-',
+      { t:'Reset Dock\u2026', fn:dockResetAsk },
+      mob && dtrashed().length && { t:'Open Trash', fn:function(){ open('trash'); } },   /* a phone's dock has no Trash icon */
+      !mob && { t:'Dock Settings\u2026', fn:function(){ open('settings'); } }
+    ] };
+  };
+  /* ---------- a window's title bar: the Window menu ---------- */
+  CTX_MENUS.win = function(tg){
+    var el = tg.el, id = el && el.dataset.app, w = id && WM.wins[id], a = APPS[id]; if(!w || !a) return null;
+    focus(w);
+    var others = Object.keys(WM.wins).filter(function(k){ return k !== id; }), game = id === 'games', fs = el.classList.contains('fs');
+    var info = a.sys === 'folder' ? { type:'item', id:a.folder } : a.sys === 'trash' ? { type:'trash' } : a.sys ? null : { type:'app', app:id };
+    var acts = a.sys ? [] : appActions(id);
+    return { items:[
+      { t:'Minimize', i:'minus', fn:function(){ minimize(w); } },
+      game ? { t:fs ? 'Exit Full Screen' : 'Enter Full Screen', i:fs ? 'compress' : 'expand', fn:function(){ gameFs(w); } } : { t:w.max ? 'Exit Zoom' : 'Zoom', i:'expand', fn:function(){ zoom(w); } },
+      !game && { t:'Move & Resize', i:'window', sub:function(){ return [
+        { t:'Left', i:'tile-l', fn:function(){ wtile(w, 'left'); } }, { t:'Right', i:'tile-r', fn:function(){ wtile(w, 'right'); } },
+        { t:'Top', i:'tile-t', fn:function(){ wtile(w, 'top'); } }, { t:'Bottom', i:'tile-b', fn:function(){ wtile(w, 'bottom'); } }, '-',
+        { t:'Fill', i:'expand', fn:function(){ wtile(w, 'fill'); } }, { t:'Center', i:'window', fn:function(){ wtile(w, 'center'); } }, '-',
+        { t:'Return to Previous Size', dis:!w.tilePrev, fn:function(){ wtile(w, 'prev'); } }
+      ]; } },
+      '-',
+      acts.length && { t:'Quick Actions', i:'skills', sub:acts },
+      info && { t:'Get Info', i:'info', fn:function(){ infoShow(info); } },
+      !a.sys && { t:'Keep in Dock', i:'dock', on:dockHas(id), fn:function(){ if(dockHas(id)) dockUnpin(id); else dockPin(id); } },
+      !a.sys && { t:dalias(id) ? 'Show on Desktop' : 'Add to Desktop', i:'plus', fn:function(){ daddApp(id); } },
+      '-',
+      others.length && { t:'Close Other Windows', fn:function(){ others.forEach(function(k){ if(WM.wins[k]) close(WM.wins[k]); }); } },
+      { t:'Close Window', i:'close', k:'\u2318W', fn:function(){ close(w); } }
+    ] };
+  };
+  /* ---------- the desktop pet ---------- */
+  CTX_MENUS.pet = function(tg){
+    var el = tg.el, k = el.getAttribute('data-pet'), pt = PETS[k] || { name:'Your pet', label:'' };
+    if(el.classList.contains('poof') || el.classList.contains('abduct')) return null;
+    var lines = pt.say && pt.say.length ? pt.say : ['\u2665'];
+    return { items:[
+      { h:pt.name+(pt.label ? ' the '+pt.label : '') },
+      { t:'Pet '+pt.name, i:'heart', fn:function(){ el.classList.remove('happy'); void el.offsetWidth; el.classList.add('happy'); setTimeout(function(){ el.classList.remove('happy'); }, 1400); petSay('\u2665', 1200); } },
+      { t:'Say Hi', i:'contact', fn:function(){ petDo('say', 1900); petSay(lines[Math.floor(Math.random()*lines.length)], 1800); } },
+      { t:'Take a Nap', i:'zzz', fn:function(){ petDo('nap', 9000); } },
+      { t:'Do a Trick', i:'skills', fn:function(){ petDo('trick', { cat:1800, ladybug:1900, penguin:1900, alien:1900, llama:1900 }[k] || 1700); } },
+      '-',
+      { t:'Change Pet', i:'paw', sub:petSub },
+      { t:'Size', i:'expand', sub:function(){ return seg3(PREF.petsize || 'md', function(v){ setPref('petsize', v); }, [['sm', 'Small'], ['md', 'Medium'], ['lg', 'Large']]); } },
+      '-',
+      { t:'Send '+pt.name+' Home', i:'close', fn:function(){ petGoodbye(el); } }
+    ] };
   };
 /* tigOS core app.js, part 27b: fps counter and the debug overlay. The parts in this folder are concatenated in name order by build.py, so they share one scope. */
   /* ---------------- `fps` puts a frame counter top right; `debug` opens a live panel under it: frames, main-thread busy estimate (timer lag + long tasks), JS heap
@@ -2367,7 +3531,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var iv = setInterval(function(){ i++; if(msgs[i]) el.textContent = msgs[i]; else clearInterval(iv); }, 440);
     setTimeout(function(){
       if(toLogin){ root.classList.add('handoff'); loginScreen(); root.classList.remove('booting'); setTimeout(function(){ root.classList.remove('handoff'); }, 560); }   /* login fades in over the boot card; the boot only drops away once it is opaque */
-      else root.classList.remove('booting');
+      else { root.classList.remove('booting'); loginItems(); }
       if(!booted){ booted = true; setTimeout(function(){ toast('Welcome to tigOS', isMobile() ? 'Tap an app in the dock to start.' : 'Open Projects, or press \u2318K to search.'); }, 700); }
     }, 2250);
   }

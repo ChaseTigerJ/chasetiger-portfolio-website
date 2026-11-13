@@ -2900,8 +2900,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(DREN && DREN.id === id) return;
     if(it.in === 'trash'){ toast('\u201c'+it.name+'\u201d is in the Trash', 'Put it back to open it'); return; }
     if(it.kind === 'note'){ jotOpen(id, from); return; }
-    if(it.kind === 'folder' && from && from.closest && from.closest('.denw')){ denGo(id); return; }   /* Finder: a folder opens in place */
-    if(it.kind === 'folder'){ fopen(id, from); return; }
+    if(it.kind === 'folder'){ if(from && from.closest && from.closest('.denw')) denGo(id); else denOpen(id); return; }   /* Finder: a folder always opens in Den, in place inside it, and Den comes to it from the desktop */
     if(APPS[it.app]) open(it.app, { from:from });
   }
   function dmove(ids, where){
@@ -2913,7 +2912,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   /* ---------- the Trash: items keep where they came from, so Put Back works; emptying it is for good ---------- */
   function dtrash(ids){
     var d = DK(), n = 0;
-    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in === 'trash') return; it.from = dinside(it); it.fc = it.c; it.fr = it.r; it.in = 'trash'; it.t2 = Date.now(); n++; var fw = WM.wins['fold-'+id]; if(fw) close(fw); });
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in === 'trash') return; it.from = dinside(it); it.fc = it.c; it.fr = it.r; it.in = 'trash'; it.t2 = Date.now(); n++; });
     if(n){ deskSave(); drender(); trashGulp(); }
     return n;
   }
@@ -2933,7 +2932,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function derase(ids){
     var d = DK(), gone = {}, bodies = [], n = 0;
     ids.forEach(function(id){ var it = d.items[id]; if(it && it.in === 'trash' && !gone[id]){ gone[id] = 1; n++; } });
-    Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(gone[k] || (it.in && gone[it.in])) { var fw = WM.wins['fold-'+k]; if(fw) close(fw); if(it.kind === 'note') bodies.push(k); delete d.items[k]; } });
+    Object.keys(d.items).forEach(function(k){ var it = d.items[k]; if(gone[k] || (it.in && gone[it.in])) { if(it.kind === 'note') bodies.push(k); delete d.items[k]; } });
     nforget(bodies); deskSave(); drender();
     return n;
   }
@@ -2946,40 +2945,19 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   /* ---------- folder and Trash windows: Finder-style icon views ---------- */
   APPS.trash = { title:'Trash', icon:'trash', tile:'trash', w:640, h:430, hidden:true, sys:'trash' };
   APPS.info = { title:'Info', icon:'info', tile:'info', w:320, h:480, hidden:true, sys:'info' };
-  function fkey(id){ return 'fold-'+id; }
-  function fopen(id, from){
-    var it = ditem(id); if(!it || it.kind !== 'folder') return;
-    var k = fkey(id);
-    APPS[k] = { title:it.name, icon:'folder', tile:'folder', w:640, h:430, hidden:true, sys:'folder', folder:id };
-    RENDER[k] = function(w){ fdraw(w, id); };
-    return open(k, { from:from });
-  }
   /* seen: the ids drawn last time in this same place, so the ones that just arrived blow in */
   function fgrid(list, where, empty, seen){
     if(!list.length) return '<div class="fw-empty">'+(empty || (where === 'trash' ? 'The Trash is empty.' : 'This folder is empty.'+(isMobile() ? '' : ' Drag items here.')))+'</div>';
     return '<div class="fw-grid">'+list.map(function(it){ return '<div class="dicon fi'+(seen && !seen[it.id] ? ' new' : '')+'" data-id="'+it.id+'" data-kind="'+it.kind+'"'+(it.app ? ' data-app="'+it.app+'"' : '')+' role="button" aria-label="'+esc(it.name)+'">'+diconHTML(it)+'</div>'; }).join('')+'</div>';
   }
-  function fdraw(w, id){
-    var it = ditem(id); if(!it){ return; }
-    var list = dkids(id).sort(dcmp('name')), sel = dselIds(w.body), had = DFOCUS && DFOCUS !== DLAYER && w.body.contains(DFOCUS), snap = w._seen ? fsnap(w.body) : null;
-    w.body.innerHTML = '<div class="fw" data-folder="'+id+'">'+fgrid(list, id, null, w._seen)+'<div class="fw-foot">'+(list.length === 1 ? '1 item' : list.length+' items')+'</div></div>';
-    if(had) DFOCUS = $('.fw', w.body);   /* a redraw keeps the keyboard on this folder */
-    sel.forEach(function(s){ var e = $('.dicon[data-id="'+s+'"]', w.body); if(e) e.classList.add('sel'); });
-    w._seen = fseen(list); if(snap) fbye(snap, w.body, w.el);
-  }
   function fsyncAll(){
     Object.keys(WM.wins).forEach(function(k){ var w = WM.wins[k], a = APPS[k]; if(!a) return;
-      if(a.sys === 'folder'){ var it = ditem(a.folder); if(!it || it.in === 'trash'){ close(w); return; } fdraw(w, a.folder); }
       if(a.sys === 'info' && INFO.t) RENDER.info(w);
       if(k === 'den') denDraw();
       if(k === 'jot') jotSync();
     });
   }
-  function winTitles(){
-    Object.keys(WM.wins).forEach(function(k){ var a = APPS[k]; if(!a || a.sys !== 'folder') return; var it = ditem(a.folder); if(!it || a.title === it.name) return; a.title = it.name;
-      var w = WM.wins[k], t = $('.win-title', w.el); if(t) t.innerHTML = ic('folder')+esc(it.name); w.el.setAttribute('aria-label', it.name); var tip = $('.dk.tmp[data-dock="'+k+'"] .tip'); if(tip) tip.textContent = it.name; });
-    updateChrome();
-  }
+  function winTitles(){ updateChrome(); }   /* after a rename: Den's own title follows in denDraw (drender, fsyncAll) */
   /* ---------- Get Info: one panel, re-aimed at whatever was asked about ---------- */
   var INFO = { t:null };
   function infoFmt(t){ try { return new Date(t).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:false }); } catch(e){ return ''; } }
@@ -3077,7 +3055,6 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var win = t.closest('.win');
     if(win && win.dataset.app === 'den'){ var D = DEN.loc; if(D === '*notes' || D === '*apps') return { kind:'none' }; if(D === 'trash') return from === 'trash' ? { kind:'none' } : { kind:'trash', el:win }; return (folders && D !== '') || D === from ? { kind:'none' } : { kind:'folder', id:D, el:win }; }
     if(win){ var a = APPS[win.dataset.app] || {};
-      if(a.sys === 'folder') return folders || from === a.folder ? { kind:'none', el:null } : { kind:'folder', id:a.folder, el:win };
       if(a.sys === 'trash') return from === 'trash' ? { kind:'none' } : { kind:'trash', el:win };
       return { kind:'none' }; }
     if(t.closest('#desktop')) return { kind:'desk' };
@@ -3692,10 +3669,9 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function fileTarget(t){
     if(isPhone() || !t || !t.closest || t.closest('.dlg-bg, .jsheet-bg, #login, #sleep')) return null;
     var w = t.closest('.win');
-    if(w){ var id = w.dataset.app, a = APPS[id] || {};
+    if(w){ var id = w.dataset.app;
       if(id === 'jot') return { where:'', open:true, el:w };
       if(id === 'den'){ var D = DEN.loc; return D === '' || D === '*notes' ? { where:'', el:w } : D !== 'trash' && D !== '*apps' && denOk(D) ? { where:D, el:w } : null; }
-      if(a.sys === 'folder') return { where:a.folder, el:w };
       return null; }
     var fi = t.closest('#dicons .dicon[data-kind="folder"]'); if(fi) return { where:fi.getAttribute('data-id'), el:fi };
     if(t.closest('#desktop')) return { where:'', at:true, el:desk };
@@ -4013,7 +3989,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
   function ddelete(ids){
     var d = DK(), n = 0;
     var bodies = [];   /* a note's text goes with it */
-    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; Object.keys(d.items).forEach(function(k){ if(d.items[k].in === id){ if(d.items[k].kind === 'note') bodies.push(k); delete d.items[k]; } }); var fw = WM.wins['fold-'+id]; if(fw) close(fw); if(it.kind === 'note') bodies.push(id); delete d.items[id]; n++; });
+    ids.forEach(function(id){ var it = d.items[id]; if(!it || it.in !== 'trash') return; Object.keys(d.items).forEach(function(k){ if(d.items[k].in === id){ if(d.items[k].kind === 'note') bodies.push(k); delete d.items[k]; } }); if(it.kind === 'note') bodies.push(id); delete d.items[id]; n++; });
     if(n){ nforget(bodies); deskSave(); drender(); }
     return n;
   }
@@ -4233,7 +4209,6 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     }
     if(w){ items.push({ t:a.title, on:!w.min && top === w, note:w.min ? 'Minimized' : '', fn:function(){ if(w.min) restore(w); focus(w); } }, '-'); }
     if(sys){
-      if(a.sys === 'folder') items.push({ t:'Show on Desktop', fn:function(){ dshow(); dflash(a.folder); } }, { t:'Get Info', fn:function(){ infoShow({ type:'item', id:a.folder }); } }, '-');
       if(w) items.push(w.min ? { t:'Show', fn:function(){ restore(w); focus(w); } } : { t:'Hide', fn:function(){ minimize(w); } }, { t:'Close', fn:function(){ close(w); } });
       return { items:items, anchor:b, src:b };
     }
@@ -4340,7 +4315,7 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     var el = tg.el, id = el && el.dataset.app, w = id && WM.wins[id], a = APPS[id]; if(!w || !a) return null;
     focus(w);
     var others = Object.keys(WM.wins).filter(function(k){ return k !== id; }), game = id === 'games', fs = el.classList.contains('fs');
-    var phone = isPhone(), info = phone ? null : a.sys === 'folder' ? { type:'item', id:a.folder } : a.sys === 'trash' ? { type:'trash' } : a.sys ? null : { type:'app', app:id };
+    var phone = isPhone(), info = phone ? null : a.sys === 'trash' ? { type:'trash' } : a.sys ? null : { type:'app', app:id };
     var acts = a.sys ? [] : appActions(id);
     return { items:[
       { t:'Minimize', i:'minus', fn:function(){ minimize(w); } },
@@ -4466,7 +4441,6 @@ window.TIG_INLINE = {"missing_photo":"data:image/webp;base64,UklGRowNAABXRUJQVlA
     if(loc === 'trash') return { items:[{ t:'Open', i:'open', fn:go }, '-', { t:'Empty Trash\u2026', i:'trash', dis:!dtrashed().length, fn:demptyAsk }] };
     if(f) return { items:[
       { t:'Open', i:'folder', fn:go },
-      { t:'Open in New Window', i:'window', fn:function(){ dopen(f.id); } },
       '-',
       { t:'Get Info', i:'info', fn:function(){ infoShow({ type:'item', id:f.id }); } },
       { t:'Rename', i:'pencil', fn:inDen(function(){ drename(f.id); }) },
